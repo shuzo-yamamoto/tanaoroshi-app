@@ -1,0 +1,16 @@
+{
+  "name": "画箋堂 棚卸",
+  "short_name": "棚卸",
+  "description": "画箋堂 店舗在庫ツール(棚卸モード)。バーコードで商品を読み取り数量を記録します。",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F5F0",
+  "theme_color": "#1F2430",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

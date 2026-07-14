@@ -1,0 +1,27 @@
+# ── OS が生成するゴミファイル ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ── エディタ／IDE ──
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── 配布用アーカイブ・作業中の一時物 ──
+*.zip
+.writetest
+.extract_tmp/
+
+# ── 依存物（本プロジェクトでは未使用だが念のため） ──
+node_modules/
+
+# 注意: 秘密情報（GAS URL・token）は設計上コードに含めない。
+#       端末側の localStorage / スプレッドシートの settings シートで管理する。

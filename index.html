@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1F2430">
+<title>画箋堂 棚卸</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ═══ ヘッダー ═══ -->
+<header id="app-header">
+  <button id="btn-back" class="header-back" hidden>‹ 戻る</button>
+  <h1 id="header-title">在庫ツール</h1>
+  <span id="net-badge" class="net-badge online">オンライン</span>
+</header>
+
+<main id="app-main">
+
+<!-- ═══ ホーム（モード選択ダッシュボード） ═══ -->
+<section id="view-home" class="view">
+  <p class="home-lead">作業モードを選んでください</p>
+  <div class="mode-grid">
+    <button class="mode-tile tile-tanaoroshi" data-goto="inv-start">
+      <span class="tile-icon">📦</span>
+      <span class="tile-name">棚卸</span>
+      <span class="tile-desc">商品を読み取り数量を数える</span>
+    </button>
+    <button class="mode-tile tile-disabled" disabled>
+      <span class="tile-icon">🛒</span>
+      <span class="tile-name">発注</span>
+      <span class="tile-desc">準備中</span>
+    </button>
+    <button class="mode-tile tile-disabled" disabled>
+      <span class="tile-icon">📍</span>
+      <span class="tile-name">在庫確認</span>
+      <span class="tile-desc">準備中</span>
+    </button>
+    <button class="mode-tile tile-disabled" disabled>
+      <span class="tile-icon">🚚</span>
+      <span class="tile-name">入荷</span>
+      <span class="tile-desc">準備中</span>
+    </button>
+    <button class="mode-tile tile-disabled" disabled>
+      <span class="tile-icon">🏷️</span>
+      <span class="tile-name">値札確認</span>
+      <span class="tile-desc">準備中</span>
+    </button>
+    <button class="mode-tile tile-disabled" disabled>
+      <span class="tile-icon">⭐</span>
+      <span class="tile-name">お客様対応</span>
+      <span class="tile-desc">準備中</span>
+    </button>
+  </div>
+</section>
+
+<!-- ═══ 棚卸：開始方法の選択 ═══ -->
+<section id="view-inv-start" class="view" hidden>
+  <div class="stack">
+    <button class="big-btn btn-primary" data-goto="inv-new">＋ 新しく棚卸を始める</button>
+    <button class="big-btn btn-secondary" data-goto="inv-select">📂 以前のデータに追加する</button>
+  </div>
+  <p class="hint">「新しく」は空のデータを作ります。「以前のデータ」は途中まで数えた続きから再開します。</p>
+</section>
+
+<!-- ═══ 棚卸：新規（名前入力） ═══ -->
+<section id="view-inv-new" class="view" hidden>
+  <label class="field-label" for="inv-name">棚卸データの名前</label>
+  <input id="inv-name" class="big-input" type="text" placeholder="例）本店1F 画材 2026-07">
+  <p class="hint">後から見て分かる名前にしてください（店舗・売場・日付など）。</p>
+  <button id="btn-inv-create" class="big-btn btn-primary">この名前で棚卸を開始する</button>
+</section>
+
+<!-- ═══ 棚卸：既存データ選択 ═══ -->
+<section id="view-inv-select" class="view" hidden>
+  <p class="field-label">再開する棚卸データを選んでください</p>
+  <ul id="session-list" class="card-list"></ul>
+  <p id="session-empty" class="empty-msg" hidden>保存された棚卸データはまだありません。<br>「新しく棚卸を始める」から作成してください。</p>
+</section>
+
+<!-- ═══ スキャン画面 ═══ -->
+<section id="view-scan" class="view view-scan" hidden>
+  <div class="scan-session-bar">
+    <span id="scan-session-name">—</span>
+    <span id="scan-count" class="scan-count">0件</span>
+  </div>
+  <div id="scan-viewport" class="scan-viewport">
+    <video id="scan-video" playsinline muted></video>
+    <div class="scan-line"></div>
+    <div class="scan-guide-top">バーコードを赤い線に合わせてください</div>
+    <div class="scan-guide-bottom">画面をタップするとズーム（3段階 → 元に戻る）</div>
+    <div id="zoom-badge" class="zoom-badge" hidden>×1</div>
+  </div>
+  <div class="stack scan-actions">
+    <button id="btn-manual" class="big-btn btn-secondary">⌨️ 読み取りをスキップして手入力</button>
+    <div class="row">
+      <button id="btn-torch" class="big-btn btn-ghost" hidden>💡 ライト ON/OFF</button>
+      <button id="btn-scan-end" class="big-btn btn-danger">棚卸を終了する</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 手入力 ═══ -->
+<section id="view-manual" class="view" hidden>
+  <label class="field-label" for="manual-jan">JANコードを入力</label>
+  <input id="manual-jan" class="big-input mono" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="4901234567894">
+  <button id="btn-manual-ok" class="big-btn btn-primary">この番号で検索する</button>
+</section>
+
+<!-- ═══ 商品確認・数量入力 ═══ -->
+<section id="view-confirm" class="view" hidden>
+  <div id="confirm-card" class="product-card">
+    <div id="confirm-status" class="product-status"></div>
+    <div id="confirm-name" class="product-name">—</div>
+    <div class="product-meta">
+      <span>JAN: <span id="confirm-jan" class="mono">—</span></span>
+      <span id="confirm-price">—</span>
+    </div>
+    <input id="confirm-newname" class="big-input" type="text" placeholder="商品名（分かれば入力・空欄でも登録可）" hidden>
+  </div>
+  <label class="field-label center">数量</label>
+  <div class="qty-row">
+    <button id="qty-minus" class="qty-btn">−</button>
+    <input id="qty-input" class="qty-input" type="number" inputmode="numeric" min="0" step="1" value="1">
+    <button id="qty-plus" class="qty-btn">＋</button>
+  </div>
+  <p id="confirm-dup-note" class="hint center warn" hidden></p>
+  <div class="stack">
+    <button id="btn-register" class="big-btn btn-primary">登録して次をスキャン</button>
+    <button id="btn-confirm-cancel" class="big-btn btn-ghost">登録せずに戻る</button>
+  </div>
+</section>
+
+<!-- ═══ データ確認 ═══ -->
+<section id="view-data" class="view" hidden>
+  <div id="data-session-picker" class="picker-row">
+    <label class="field-label" for="data-session-sel">棚卸データ</label>
+    <select id="data-session-sel" class="big-select"></select>
+  </div>
+  <div id="data-summary" class="data-summary"></div>
+  <ul id="item-list" class="card-list"></ul>
+  <p id="item-empty" class="empty-msg" hidden>まだ商品が登録されていません。</p>
+  <div class="stack data-actions">
+    <button id="btn-resume-scan" class="big-btn btn-secondary">📷 この棚卸の続きをスキャンする</button>
+    <button id="btn-submit" class="big-btn btn-success">☁️ Webへ提出（スプレッドシート保存）</button>
+    <button id="btn-csv" class="big-btn btn-warning">📄 CSV出力（ダウンロード）</button>
+    <button id="btn-del-session" class="big-btn btn-ghost danger-text">この棚卸データを削除する</button>
+  </div>
+</section>
+
+<!-- ═══ 商品情報（マスタ管理） ═══ -->
+<section id="view-products" class="view" hidden>
+  <div class="master-status">
+    <span>商品マスタ：<strong id="master-count">0</strong> 件</span>
+    <span id="master-updated" class="sub"></span>
+  </div>
+  <input id="product-search" class="big-input" type="search" placeholder="🔍 商品名・JANで検索">
+  <ul id="product-list" class="card-list"></ul>
+  <div class="stack">
+    <label class="big-btn btn-secondary file-btn">
+      📥 CSVから商品マスタを取り込む
+      <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+    </label>
+    <button id="btn-product-add" class="big-btn btn-ghost">＋ 商品を1件ずつ登録する</button>
+  </div>
+</section>
+
+<!-- ═══ CSV列の対応付け ═══ -->
+<section id="view-csvmap" class="view" hidden>
+  <p class="field-label">CSVの列とデータの対応を確認してください</p>
+  <div class="map-row"><label>JANコード</label><select id="map-jan" class="big-select"></select></div>
+  <div class="map-row"><label>商品名</label><select id="map-name" class="big-select"></select></div>
+  <div class="map-row"><label>売価（任意）</label><select id="map-price" class="big-select"></select></div>
+  <div id="csv-preview" class="csv-preview"></div>
+  <button id="btn-csv-import" class="big-btn btn-primary">この設定で取り込む</button>
+</section>
+
+<!-- ═══ 商品1件登録 ═══ -->
+<section id="view-product-add" class="view" hidden>
+  <label class="field-label" for="padd-jan">JANコード</label>
+  <input id="padd-jan" class="big-input mono" type="text" inputmode="numeric" placeholder="4901234567894">
+  <label class="field-label" for="padd-name">商品名</label>
+  <input id="padd-name" class="big-input" type="text" placeholder="ホルベイン 透明水彩 12色">
+  <label class="field-label" for="padd-price">売価（任意）</label>
+  <input id="padd-price" class="big-input" type="number" inputmode="numeric" placeholder="1650">
+  <button id="btn-padd-save" class="big-btn btn-primary">商品マスタに登録する</button>
+</section>
+
+<!-- ═══ 設定 ═══ -->
+<section id="view-settings" class="view" hidden>
+  <label class="field-label" for="set-staff">担当者名（提出データに記録されます）</label>
+  <input id="set-staff" class="big-input" type="text" placeholder="山本">
+  <label class="field-label" for="set-gas">提出先URL（GAS WebアプリのURL）</label>
+  <input id="set-gas" class="big-input mono small" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+  <label class="field-label" for="set-token">提出用トークン</label>
+  <input id="set-token" class="big-input mono" type="text" placeholder="設定シートと同じ値">
+  <button id="btn-set-save" class="big-btn btn-primary">設定を保存する</button>
+  <button id="btn-set-test" class="big-btn btn-ghost">接続テスト</button>
+  <p class="hint">アプリのバージョン: <span id="app-version"></span></p>
+</section>
+
+</main>
+
+<!-- ═══ 下部タブ ═══ -->
+<nav id="tab-bar">
+  <button class="tab active" data-tab="home"><span class="tab-icon">🏠</span>ホーム</button>
+  <button class="tab" data-tab="products"><span class="tab-icon">🗂</span>商品情報</button>
+  <button class="tab" data-tab="data"><span class="tab-icon">📋</span>データ</button>
+  <button class="tab" data-tab="settings"><span class="tab-icon">⚙️</span>設定</button>
+</nav>
+
+<!-- ═══ トースト・スピナー ═══ -->
+<div id="toast" class="toast" hidden></div>
+<div id="spinner" class="spinner-overlay" hidden><div class="spinner"></div><p id="spinner-msg">処理中…</p></div>
+
+<script src="js/zxing.min.js"></script>
+<script src="js/db.js"></script>
+<script src="js/scanner.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
