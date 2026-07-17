@@ -11,6 +11,10 @@
   --safe-b:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+/* hidden属性の強制。.spinner-overlay/.big-btn 等の display 指定はブラウザ標準の
+   [hidden]{display:none} より優先されるため、!important で順序・詳細度に依存させない
+   （詳細度は [hidden] も .big-btn も 0,1,0 で同値。README 不具合ログ#1） */
+[hidden]{display:none !important;}
 html,body{margin:0; padding:0; height:100%;}
 body{
   font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;

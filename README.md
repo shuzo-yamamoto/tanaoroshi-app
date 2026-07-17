@@ -94,4 +94,16 @@ PWA(Service Worker・カメラ)は **HTTPS配信が必須**。無料で済む選
 
 ## 不具合ログ
 
-(運用開始後に追記)
+### #1 起動直後にローディングが出たまま操作不能 / ライトボタンが常時表示（2026-07-14 修正）
+
+| 項目 | 内容 |
+|---|---|
+| **症状** | GitHub Pages公開後、アプリを開くとホームのモードタイルが薄く表示され、画面中央に「処理中…」が出たまま先に進めない。Chrome(通常/シークレット)・iPhoneいずれでも再現。DevToolsで IndexedDB が「No indexedDB detected」 |
+| **原因** | CSSのカスケードで、**著者スタイルの `display` 指定がブラウザUAスタイルシートの `[hidden]{display:none}` を上書き**していた。`.spinner-overlay{display:flex}` により `<div id="spinner" hidden>` が常時表示となり、`position:fixed; inset:0; z-index:60` で全画面を覆って**全クリックを遮断**。背景 `rgba(247,245,240,.85)` が背後のタイルを薄く見せていた |
+| **併発** | `#btn-torch` も `.big-btn{display:flex}` で同じ状態になり、**torch非対応端末でもライトボタンが常時表示**されていた（設計判断#4「対応検出できた場合のみボタン表示」への違反） |
+| **誤診しやすい点** | ①「No indexedDB detected」は**原因でなく症状**。`dbOpen()` は遅延生成で、ホーム画面ではDB関数を呼ばないため、操作不能＝DBが永久に作られない。②Consoleの `A listener indicated an asynchronous response…` は**ブラウザ拡張由来のノイズ**で無関係 |
+| **対策** | `css/style.css` に `[hidden]{display:none !important;}` を追加。`[hidden]` と `.big-btn` は詳細度が同じ(0,1,0)で記述順に依存するため、順序非依存にするため `!important` を付与。あわせて `sw.js` の `CACHE_VERSION` を `v1.0.1` へ（旧CSSがキャッシュ配信されると修正が届かないため必須） |
+| **再発防止** | 検収手順書に回帰項目を追加：「起動直後にローディングが出ていない／ホームのタイルが押せる」「torch非対応端末でライトボタンが表示されない」 |
+| **テストが検出できなかった理由** | コードレビューがJSロジック（`btn-torch.hidden = !torchSupported`）だけを設計書と突合し、**CSSとの相互作用を検証していなかった**。また実機なし検証でUIクリックが効かなかった際、原因を追わずJS直接実行でUI層を迂回したため見逃した。→ 以後、`hidden` 属性で制御する要素は**computed style での確認**を検証手順に含める |
+
+**汎用化**: 「素のHTML/CSSで `hidden` 属性を使う場合、著者CSSの `display` 指定が UA の `[hidden]{display:none}` に勝つ」は他プロジェクトでも踏む落とし穴のため、共通標準§4への追記を推奨（未反映）。
