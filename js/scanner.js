@@ -58,12 +58,17 @@ const Scanner = (() => {
     _applyCssZoom(1);
 
     // 背面カメラを優先
+    // 解像度: 実機計測(iPad Pro第3世代)で 720×1280 しか出ておらず、小さいJANの
+    // 1モジュールが1〜2pxに潰れて復号できなかったため 1080p を要求する。
+    // (短辺720→1080で1モジュールあたりの画素が約1.5倍。README 不具合ログ#2続報2)
+    // ※ min/exact は OverconstrainedError でカメラ起動自体が失敗し得るため使わず、
+    //   ideal のみにして非対応端末では自動的に近い値へフォールバックさせる。
     const constraints = {
       audio: false,
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       }
     };
 
