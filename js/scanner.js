@@ -30,12 +30,14 @@ const Scanner = (() => {
 
   function _buildReader() {
     const hints = new Map();
+    // 読取対象はJAN(EAN-13/8)のみに限定する。
+    // ITF・CODE_39・CODE_128 を含めると、ITFが13桁EAN-13の一部を短い桁数として
+    // 部分誤読し「桁が欠ける」読取不良を起こす(ITFは既定でチェックデジット無し・
+    // 許容長[6,8,10,12,14])。また多フォーマット総当たりはSafariで低速化する。
+    // → JAN系に限定して誤読と低速を同時に解消(README 設計判断#8 / 不具合ログ#2)。
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
       ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.ITF
+      ZXing.BarcodeFormat.EAN_8
     ]);
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
     return new ZXing.BrowserMultiFormatReader(hints, 300 /* 読取間隔ms */);
