@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -174,12 +174,45 @@ async function startScan() {
   updateScanCount();
   $('#zoom-badge').hidden = true;
   try {
-    const { torchSupported } = await Scanner.start($('#scan-video'), onCodeDetected);
+    const { torchSupported, diag } = await Scanner.start($('#scan-video'), onCodeDetected);
     $('#btn-torch').hidden = !torchSupported;
+    renderDiag(diag);
+    // ピント/AFが落ち着いた後の値も拾えるよう、少し後にもう一度計測(施策3・計測用)
+    setTimeout(() => { if (currentView === 'scan') renderDiag(Scanner.readDiag()); }, 1500);
   } catch (e) {
     console.error(e);
     toast('カメラを起動できませんでした。ブラウザのカメラ許可を確認するか、手入力をご利用ください。', true, 4500);
   }
+}
+
+/** 📷 カメラ診断表示(施策3・計測用。計測完了後に撤去/設定裏に隠す — README 不具合ログ#2続報) */
+function renderDiag(diag) {
+  const el = $('#scan-diag');
+  if (!el) return;
+  if (!diag || !diag.available) {
+    el.hidden = false;
+    el.textContent = '📷 カメラ診断: 情報を取得できません(getSettings 非対応の可能性)';
+    return;
+  }
+  const res = (diag.width && diag.height) ? `${diag.width}×${diag.height}` : '不明';
+  const fps = diag.frameRate ? Math.round(diag.frameRate) + 'fps' : '';
+  const focus = diag.focusMode || '(未報告)';
+  const focusCap = diag.focusModesSupported ? diag.focusModesSupported.join('/') : 'API非対応';
+  const zoom = diag.zoom
+    ? `${diag.zoom.min}〜${diag.zoom.max}${diag.zoom.current != null ? `(現${diag.zoom.current})` : ''}`
+    : 'API非対応';
+  const torch = diag.torch === undefined ? '不明' : (diag.torch ? 'あり' : 'なし');
+  const cam = diag.label || diag.facing || '不明';
+  el.hidden = false;
+  el.textContent = [
+    '📷 カメラ診断(計測用)',
+    `解像度: ${res} ${fps}`,
+    `ピント: ${focus}(対応: ${focusCap})`,
+    `ズーム: ${zoom}`,
+    `ライト: ${torch}`,
+    `レンズ: ${cam}`,
+    `getCapabilities: ${diag.hasGetCapabilities ? '対応' : '非対応'}`
+  ].join('\n');
 }
 
 async function updateScanCount() {
@@ -648,6 +681,7 @@ function init() {
     const on = await Scanner.toggleTorch();
     toast(on ? 'ライトを点けました' : 'ライトを消しました', false, 1200);
   });
+  $('#btn-diag-refresh').addEventListener('click', () => renderDiag(Scanner.readDiag())); // 施策3・計測用
   $('#btn-manual').addEventListener('click', () => goto('manual'));
   $('#btn-scan-end').addEventListener('click', async () => {
     await Scanner.stop();

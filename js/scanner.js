@@ -92,7 +92,30 @@ const Scanner = (() => {
       }
       torchSupported = !!cap.torch;
     }
-    return { torchSupported };
+    return { torchSupported, diag: _collectDiag() };
+  }
+
+  /**
+   * 実機のカメラ設定を計測するための診断情報を返す(施策3・計測用)。
+   * iOS Safari では getSettings / getCapabilities が一部未対応のことがあり、
+   * 取得できない値は null / undefined になる(それ自体が切り分けの材料になる)。
+   */
+  function _collectDiag() {
+    if (!track) return { available: false };
+    let s = {}, caps = {};
+    try { s = track.getSettings ? track.getSettings() : {}; } catch (e) { /* noop */ }
+    try { caps = track.getCapabilities ? track.getCapabilities() : {}; } catch (e) { /* noop */ }
+    return {
+      available: true,
+      hasGetCapabilities: !!track.getCapabilities,
+      width: s.width, height: s.height, frameRate: s.frameRate,
+      focusMode: s.focusMode,
+      focusModesSupported: caps.focusMode || null,
+      zoom: caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step, current: s.zoom } : null,
+      torch: ('torch' in caps) ? !!caps.torch : undefined,
+      facing: s.facingMode,
+      label: track.label || ''
+    };
   }
 
   async function stop() {
@@ -140,5 +163,5 @@ const Scanner = (() => {
     return torchOn;
   }
 
-  return { start, stop, cycleZoom, toggleTorch, get running() { return running; } };
+  return { start, stop, cycleZoom, toggleTorch, readDiag: _collectDiag, get running() { return running; } };
 })();
