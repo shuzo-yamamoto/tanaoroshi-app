@@ -158,6 +158,11 @@ body{
   white-space:pre-wrap; word-break:break-all;
   padding:10px 12px; border-radius:10px; border:1px solid #2A3140;
 }
+/* ZXingが実際に取り込んだ画像の目視確認用サムネイル(計測用) */
+.scan-diag-thumb{
+  display:block; width:100%; max-width:320px; margin:8px auto 0;
+  border:1px solid #2A3140; border-radius:8px; background:#000;
+}
 
 /* ── 商品確認 ── */
 .product-card{

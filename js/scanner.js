@@ -28,6 +28,15 @@ const Scanner = (() => {
   let lastCode = '';
   let lastCodeAt = 0;
 
+  // ── 計測用(v1.0.5診断強化)。読取の判定条件には一切影響させない ──
+  let _stats = null;
+  function _resetStats() {
+    _stats = {
+      startedAt: Date.now(), attempts: 0, results: 0,
+      errorCounts: {}, lastErrorName: null, callbackError: null
+    };
+  }
+
   function _buildReader() {
     const hints = new Map();
     // 読取対象はJAN(EAN-13/8)のみに限定する。
@@ -55,6 +64,7 @@ const Scanner = (() => {
     onDecodeCb = onDecode;
     reader = _buildReader();
     zoomIdx = 0; torchOn = false; hwZoomLevels = null;
+    _resetStats();
     _applyCssZoom(1);
 
     // 背面カメラを優先
@@ -73,12 +83,31 @@ const Scanner = (() => {
     };
 
     await reader.decodeFromConstraints(constraints, video, (result, err) => {
+      // ── 計測(v1.0.5)。以降の判定条件は従来と同一 ──
+      _stats.attempts++;
+      if (err) {
+        const n = err.name || (err.constructor && err.constructor.name) || 'UnknownError';
+        _stats.lastErrorName = n;
+        _stats.errorCounts[n] = (_stats.errorCounts[n] || 0) + 1;
+      }
       if (!result) return; // errはNotFoundExceptionが頻発するので無視
+      _stats.results++;
       const code = result.getText();
       const now = Date.now();
       if (code === lastCode && now - lastCodeAt < 2000) return; // 二重検出抑制
       lastCode = code; lastCodeAt = now;
-      if (onDecodeCb) onDecodeCb(code);
+      // 読取は成功しているのに後段(openConfirm/IndexedDB等)の例外で無反応に見える
+      // ケースを捕捉するため、呼び出しを保護する(v1.0.5計測)
+      if (onDecodeCb) {
+        try {
+          const ret = onDecodeCb(code);
+          if (ret && typeof ret.catch === 'function') {
+            ret.catch(e => { _stats.callbackError = (e && e.message) ? e.message : String(e); });
+          }
+        } catch (e) {
+          _stats.callbackError = (e && e.message) ? e.message : String(e);
+        }
+      }
     });
 
     running = true;
@@ -119,8 +148,84 @@ const Scanner = (() => {
       zoom: caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step, current: s.zoom } : null,
       torch: ('torch' in caps) ? !!caps.torch : undefined,
       facing: s.facingMode,
-      label: track.label || ''
+      label: track.label || '',
+      // ── v1.0.5 診断強化 ──
+      // video要素が実際に持っている寸法(trackの設定値と食い違うことがある)
+      video: videoEl ? {
+        w: videoEl.videoWidth, h: videoEl.videoHeight,
+        readyState: videoEl.readyState, paused: videoEl.paused
+      } : null,
+      // ZXingが実際に取り込んでいるcanvasの寸法。0×0なら空画像をデコードし続けている
+      capture: (reader && reader.captureCanvas) ? {
+        w: reader.captureCanvas.width, h: reader.captureCanvas.height
+      } : null,
+      stats: _stats ? {
+        attempts: _stats.attempts,
+        results: _stats.results,
+        perSec: Math.round(_stats.attempts / Math.max(1, (Date.now() - _stats.startedAt) / 1000) * 10) / 10,
+        lastErrorName: _stats.lastErrorName,
+        errorCounts: _stats.errorCounts,
+        callbackError: _stats.callbackError
+      } : null
     };
+  }
+
+  /**
+   * 📸 フレーム取り込みテスト(v1.0.5計測)。
+   * いま映っているフレームを取り込み、①サムネイル ②平均輝度 ③全画面デコード
+   * ④中央帯(ROI)デコード を返す。取込経路の不具合とROI化の効果を一度に切り分ける。
+   */
+  async function captureFrameTest() {
+    if (!videoEl || !videoEl.videoWidth) {
+      return { ok: false, reason: 'ビデオ未準備(videoWidth=0)' };
+    }
+    const w = videoEl.videoWidth, h = videoEl.videoHeight;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, w, h);
+
+    // 平均輝度(間引きサンプル)。0付近なら取り込みが真っ黒＝描画経路の不具合
+    let sum = 0, n = 0;
+    try {
+      const step = Math.max(1, Math.floor(h / 40));
+      for (let y = 0; y < h; y += step) {
+        const row = ctx.getImageData(0, y, w, 1).data;
+        for (let i = 0; i < row.length; i += 4 * 20) {
+          sum += row[i] * 0.299 + row[i + 1] * 0.587 + row[i + 2] * 0.114;
+          n++;
+        }
+      }
+    } catch (e) { /* 取得不可時は -1 */ }
+    const brightness = n ? Math.round(sum / n) : -1;
+
+    // 中央帯(ROI)。赤いガイド線はビューポート中央にあり、object-fit:coverで
+    // 上下が均等に切られるため、映像の中央帯がおおよそ赤線周辺に対応する
+    const bandH = Math.max(1, Math.round(h * 0.3));
+    const bandY = Math.round((h - bandH) / 2);
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = bandH;
+    rc.getContext('2d').drawImage(c, 0, bandY, w, bandH, 0, 0, w, bandH);
+
+    // 表示用サムネイル(実際に何が取り込まれたかを目視確認するため)
+    const tw = 320, th = Math.max(1, Math.round(h * (tw / w)));
+    const tc = document.createElement('canvas');
+    tc.width = tw; tc.height = th;
+    tc.getContext('2d').drawImage(c, 0, 0, tw, th);
+
+    const decode = async (url) => {
+      const r = _buildReader();
+      try {
+        const res = await r.decodeFromImageUrl(url);
+        return { ok: true, text: res.getText() };
+      } catch (e) {
+        return { ok: false, err: (e && (e.name || (e.constructor && e.constructor.name))) || String(e) };
+      } finally { try { r.reset(); } catch (_) { /* noop */ } }
+    };
+
+    const full = await decode(c.toDataURL('image/jpeg', 0.95));
+    const roi = await decode(rc.toDataURL('image/jpeg', 0.95));
+    return { ok: true, w, h, brightness, bandH, full, roi, thumbUrl: tc.toDataURL('image/jpeg', 0.7) };
   }
 
   async function stop() {
@@ -168,5 +273,9 @@ const Scanner = (() => {
     return torchOn;
   }
 
-  return { start, stop, cycleZoom, toggleTorch, readDiag: _collectDiag, get running() { return running; } };
+  return {
+    start, stop, cycleZoom, toggleTorch,
+    readDiag: _collectDiag, captureFrameTest,
+    get running() { return running; }
+  };
 })();

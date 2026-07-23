@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -203,16 +203,64 @@ function renderDiag(diag) {
     : 'API非対応';
   const torch = diag.torch === undefined ? '不明' : (diag.torch ? 'あり' : 'なし');
   const cam = diag.label || diag.facing || '不明';
+
+  // ── v1.0.5 診断強化 ──
+  const v = diag.video;
+  const vidLine = v ? `${v.w}×${v.h} readyState=${v.readyState}${v.paused ? ' (停止中)' : ''}` : '取得不可';
+  const cap = diag.capture;
+  const capLine = cap ? `${cap.w}×${cap.h}${(cap.w === 0 || cap.h === 0) ? '  ★0です(空画像をデコード中)' : ''}` : '未生成';
+  const st = diag.stats;
+  const statLine = st ? `${st.attempts}回 (${st.perSec}/秒) / 成功 ${st.results}回` : '未計測';
+  const errNames = st && st.errorCounts ? Object.keys(st.errorCounts) : [];
+  const errLine = errNames.length
+    ? errNames.map(k => `${k}:${st.errorCounts[k]}`).join(', ')
+    : '(なし)';
+  const cbLine = st && st.callbackError ? `★${st.callbackError}` : '(なし)';
+
   el.hidden = false;
   el.textContent = [
     '📷 カメラ診断(計測用)',
-    `解像度: ${res} ${fps}`,
+    `解像度(track): ${res} ${fps}`,
+    `video要素: ${vidLine}`,
+    `ZXing取込canvas: ${capLine}`,
+    `デコード試行: ${statLine}`,
+    `例外内訳: ${errLine}`,
+    `読取後の例外: ${cbLine}`,
     `ピント: ${focus}(対応: ${focusCap})`,
     `ズーム: ${zoom}`,
-    `ライト: ${torch}`,
-    `レンズ: ${cam}`,
+    `ライト: ${torch}  / レンズ: ${cam}`,
     `getCapabilities: ${diag.hasGetCapabilities ? '対応' : '非対応'}`
   ].join('\n');
+}
+
+/** 📸 フレーム取り込みテスト(v1.0.5計測) */
+async function runFrameTest() {
+  const el = $('#scan-diag');
+  const img = $('#scan-diag-thumb');
+  el.hidden = false;
+  el.textContent = '📸 フレームを取り込み中…';
+  try {
+    const r = await Scanner.captureFrameTest();
+    if (!r.ok) {
+      img.hidden = true;
+      el.textContent = '📸 フレーム取り込みテスト\n失敗: ' + r.reason;
+      return;
+    }
+    img.src = r.thumbUrl;
+    img.hidden = false;
+    el.textContent = [
+      '📸 フレーム取り込みテスト',
+      `取込サイズ: ${r.w}×${r.h}`,
+      `平均輝度: ${r.brightness} (0=真っ黒 / 255=真っ白)`,
+      `全画面デコード: ${r.full.ok ? '✅成功 ' + r.full.text : '×失敗 ' + r.full.err}`,
+      `中央帯ROIデコード(高さ${r.bandH}px): ${r.roi.ok ? '✅成功 ' + r.roi.text : '×失敗 ' + r.roi.err}`,
+      '',
+      '↓ ZXingが受け取った画像(サムネイル)'
+    ].join('\n');
+  } catch (e) {
+    img.hidden = true;
+    el.textContent = '📸 テスト中にエラー: ' + ((e && e.message) ? e.message : String(e));
+  }
 }
 
 async function updateScanCount() {
@@ -224,7 +272,14 @@ async function updateScanCount() {
 
 function onCodeDetected(code) {
   if (navigator.vibrate) navigator.vibrate(80); // Androidは振動でお知らせ
-  openConfirm(code);
+  // 読取は成功しているのに後段で例外が出ると「無反応」に見えるため、
+  // 例外を画面に出す(iOSではコンソールを見られないため。v1.0.5計測)
+  return Promise.resolve()
+    .then(() => openConfirm(code))
+    .catch(e => {
+      console.error(e);
+      toast('読取後の処理でエラー: ' + ((e && e.message) ? e.message : String(e)), true, 6000);
+    });
 }
 
 // ── 商品確認・数量入力 ──
@@ -682,6 +737,7 @@ function init() {
     toast(on ? 'ライトを点けました' : 'ライトを消しました', false, 1200);
   });
   $('#btn-diag-refresh').addEventListener('click', () => renderDiag(Scanner.readDiag())); // 施策3・計測用
+  $('#btn-frame-test').addEventListener('click', runFrameTest); // v1.0.5計測
   $('#btn-manual').addEventListener('click', () => goto('manual'));
   $('#btn-scan-end').addEventListener('click', async () => {
     await Scanner.stop();
