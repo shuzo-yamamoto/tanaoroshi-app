@@ -119,7 +119,7 @@
     <div id="confirm-name" class="product-name">—</div>
     <div class="product-meta">
       <span>JAN: <span id="confirm-jan" class="mono">—</span></span>
-      <span id="confirm-price">—</span>
+      <span id="confirm-cost">—</span>
     </div>
     <input id="confirm-newname" class="big-input" type="text" placeholder="商品名（分かれば入力・空欄でも登録可）" hidden>
   </div>
@@ -175,20 +175,21 @@
   <p class="field-label">CSVの列とデータの対応を確認してください</p>
   <div class="map-row"><label>JANコード</label><select id="map-jan" class="big-select"></select></div>
   <div class="map-row"><label>商品名</label><select id="map-name" class="big-select"></select></div>
-  <div class="map-row"><label>売価（任意）</label><select id="map-price" class="big-select"></select></div>
+  <div class="map-row"><label>原価（任意）</label><select id="map-cost" class="big-select"></select></div>
   <div id="csv-preview" class="csv-preview"></div>
   <button id="btn-csv-import" class="big-btn btn-primary">この設定で取り込む</button>
 </section>
 
 <!-- ═══ 商品1件登録 ═══ -->
 <section id="view-product-add" class="view" hidden>
-  <label class="field-label" for="padd-jan">JANコード</label>
-  <input id="padd-jan" class="big-input mono" type="text" inputmode="numeric" placeholder="4901234567894">
-  <label class="field-label" for="padd-name">商品名</label>
-  <input id="padd-name" class="big-input" type="text" placeholder="ホルベイン 透明水彩 12色">
-  <label class="field-label" for="padd-price">売価（任意）</label>
-  <input id="padd-price" class="big-input" type="number" inputmode="numeric" placeholder="1650">
-  <button id="btn-padd-save" class="big-btn btn-primary">商品マスタに登録する</button>
+  <label class="field-label" for="padd-jan">JANコード<span class="req">必須</span></label>
+  <input id="padd-jan" class="big-input mono" type="text" inputmode="numeric" placeholder="4901234567894" required aria-required="true">
+  <label class="field-label" for="padd-name">商品名<span class="req">必須</span></label>
+  <input id="padd-name" class="big-input" type="text" placeholder="ホルベイン 透明水彩 12色" required aria-required="true">
+  <label class="field-label" for="padd-cost">原価（任意）</label>
+  <input id="padd-cost" class="big-input" type="number" inputmode="numeric" placeholder="1155">
+  <p class="hint">JANコードと商品名の両方を入力すると、登録ボタンが押せるようになります。</p>
+  <button id="btn-padd-save" class="big-btn btn-primary" disabled>商品マスタに登録する</button>
 </section>
 
 <!-- ═══ 設定 ═══ -->

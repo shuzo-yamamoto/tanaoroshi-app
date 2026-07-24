@@ -3,9 +3,15 @@
  * 画箋堂 棚卸PWA
  *
  * ストア構成:
- *   products : 商品マスタ        key = jan   {jan, name, price, updatedAt}
+ *   products : 商品マスタ        key = jan   {jan, name, cost, updatedAt}
  *   sessions : 棚卸データ(親)     key = id    {id, name, createdAt, updatedAt, submittedAt}
- *   items    : 棚卸明細(子)       key = 自動   {id, sessionId, jan, name, price, qty, scannedAt}
+ *   items    : 棚卸明細(子)       key = 自動   {id, sessionId, jan, name, cost, qty, scannedAt}
+ *
+ * 金額キーについて(README設計判断#9):
+ *   v1.1.0 で price(売価想定) → cost(原価) に改称した。
+ *   v1.0系で保存済みのレコードは price を持つため、読み出しは app.js の
+ *   costOf() を通すこと。DBバージョンは上げず、移行処理も行わない
+ *   (既存端末のマスタ再取込・登録済み明細を無効にしないため)。
  *
  * 方針(開発標準§3準拠):
  *   - 全公開関数は Promise を返し、失敗時は throw(呼び出し側でtoast表示)

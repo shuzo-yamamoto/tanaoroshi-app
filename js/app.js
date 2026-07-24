@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.1.0';
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -43,6 +43,18 @@ function fmtPrice(v) {
   if (v === null || v === undefined || v === '') return '';
   const n = Number(v);
   return isNaN(n) ? String(v) : '¥' + n.toLocaleString('ja-JP');
+}
+
+/**
+ * 金額(原価)の取得。
+ * v1.1.0でキーを price → cost に改称したが、v1.0系で保存済みの
+ * 商品マスタ・明細は price を持つため、そちらもフォールバックで読む。
+ * (既存端末の再取込を不要にするための互換措置 — README設計判断#9)
+ */
+function costOf(o) {
+  if (!o) return '';
+  if (o.cost !== undefined && o.cost !== null && o.cost !== '') return o.cost;
+  return (o.price === undefined || o.price === null) ? '' : o.price;
 }
 
 /** 設定(localStorage。使用不可環境ではメモリ保持にフォールバック — 標準§3.7) */
@@ -124,6 +136,7 @@ async function goto(view) {
   if (view === 'scan') startScan();
   if (view === 'data') renderDataView();
   if (view === 'products') renderProducts();
+  if (view === 'product-add') updatePaddButton();
   if (view === 'settings') renderSettings();
 
   window.scrollTo(0, 0);
@@ -218,14 +231,15 @@ async function openConfirm(code) {
     status.textContent = '✓ 商品マスタに登録済み';
     status.className = 'product-status ok';
     $('#confirm-name').textContent = pendingProduct.name || '(名称未設定)';
-    $('#confirm-price').textContent = fmtPrice(pendingProduct.price);
+    const c = costOf(pendingProduct);
+    $('#confirm-cost').textContent = c === '' ? '' : '原価 ' + fmtPrice(c);
     newNameInput.hidden = true;
   } else {
     card.classList.add('unknown');
     status.textContent = '⚠ 商品マスタに見つかりません(このまま登録できます)';
     status.className = 'product-status ng';
     $('#confirm-name').textContent = '未登録の商品';
-    $('#confirm-price').textContent = '';
+    $('#confirm-cost').textContent = '';
     newNameInput.hidden = false;
     newNameInput.value = '';
   }
@@ -253,7 +267,7 @@ async function registerItem() {
     sessionId: currentSession.id,
     jan: pendingCode,
     name: name,
-    price: pendingProduct ? pendingProduct.price : '',
+    cost: pendingProduct ? costOf(pendingProduct) : '',
     inMaster: !!pendingProduct,
     qty: qty,
     scannedAt: new Date().toISOString()
@@ -343,10 +357,10 @@ async function exportCsv() {
   if (items.length === 0) { toast('出力する明細がありません。', true); return; }
 
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['棚卸名', 'JANコード', '商品名', '単価', '数量', '読取日時']];
+  const rows = [['棚卸名', 'JANコード', '商品名', '原価', '数量', '読取日時']];
   // 古い順に出力
   for (const it of [...items].reverse()) {
-    rows.push([session.name, it.jan, it.name, it.price, it.qty, fmtDate(it.scannedAt)]);
+    rows.push([session.name, it.jan, it.name, costOf(it), it.qty, fmtDate(it.scannedAt)]);
   }
   const csv = '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -381,8 +395,10 @@ async function submitToWeb() {
       action: 'submit',
       session: { name: session.name, id: session.id },
       staff: conf.staff || '',
+      // cost と price の両方を送る。gas/Code.gs を再デプロイしていない提出先でも
+      // 金額が欠落しないようにするための互換措置(README設計判断#9)
       items: [...items].reverse().map(it => ({
-        jan: it.jan, name: it.name, price: it.price, qty: it.qty,
+        jan: it.jan, name: it.name, cost: costOf(it), price: costOf(it), qty: it.qty,
         inMaster: it.inMaster, scannedAt: it.scannedAt
       }))
     };
@@ -439,7 +455,7 @@ async function renderProductSearch() {
         <div class="li-title"></div>
         <div class="li-sub mono">${p.jan}</div>
       </div>
-      <span class="li-sub">${fmtPrice(p.price)}</span>`;
+      <span class="li-sub">${costOf(p) === '' ? '' : '原価 ' + fmtPrice(costOf(p))}</span>`;
     li.querySelector('.li-title').textContent = p.name || '(名称なし)';
     ul.appendChild(li);
   }
@@ -505,12 +521,14 @@ function buildCsvMapUI() {
   const defaults = {
     jan: guess(['JAN', 'jan', 'バーコード', '商品コード']),
     name: guess(['商品名', '品名']),
-    price: guess(['売価', '販売価格', '価格', '標準価格', '税込'])
+    // 取り込むのは原価(スマレジCSVのH列)。「商品単価」(売価)や
+    // 「オープン価格」(0/1のフラグ)を拾わないよう候補を原価系に限定する(設計判断#9)
+    cost: guess(['原価', '仕入原価', '仕入価格', '仕入単価'])
   };
-  for (const key of ['jan', 'name', 'price']) {
+  for (const key of ['jan', 'name', 'cost']) {
     const sel = $('#map-' + key);
     sel.innerHTML = '';
-    if (key === 'price') {
+    if (key === 'cost') {
       const op = document.createElement('option');
       op.value = '-1'; op.textContent = '(取り込まない)';
       sel.appendChild(op);
@@ -521,7 +539,7 @@ function buildCsvMapUI() {
       op.textContent = `${i + 1}列目: ${h}`;
       sel.appendChild(op);
     });
-    sel.value = String(defaults[key] >= 0 ? defaults[key] : (key === 'price' ? -1 : 0));
+    sel.value = String(defaults[key] >= 0 ? defaults[key] : (key === 'cost' ? -1 : 0));
   }
   // プレビュー(先頭3行)
   const pv = $('#csv-preview');
@@ -533,7 +551,7 @@ function buildCsvMapUI() {
 async function importCsv() {
   const janIdx = Number($('#map-jan').value);
   const nameIdx = Number($('#map-name').value);
-  const priceIdx = Number($('#map-price').value);
+  const costIdx = Number($('#map-cost').value);
   spinner(true, '商品マスタを取り込み中…');
   try {
     const list = [];
@@ -544,7 +562,7 @@ async function importCsv() {
       list.push({
         jan: jan,
         name: String(r[nameIdx] ?? '').trim(),
-        price: priceIdx >= 0 ? String(r[priceIdx] ?? '').trim().replace(/[¥,\s]/g, '') : ''
+        cost: costIdx >= 0 ? String(r[costIdx] ?? '').trim().replace(/[¥,\s]/g, '') : ''
       });
     }
     if (list.length === 0) throw new Error('取り込める行がありません。JANコードの列指定を確認してください。');
@@ -562,14 +580,26 @@ async function importCsv() {
   }
 }
 
+/**
+ * JAN・商品名が両方入るまで登録ボタンを無効化(README設計判断#10)。
+ * 無効化だけに頼らず addProductManually 側の検証も残す(二重の防御)。
+ */
+function updatePaddButton() {
+  const jan = $('#padd-jan').value.trim();
+  const name = $('#padd-name').value.trim();
+  $('#btn-padd-save').disabled = !(jan && name);
+}
+
 async function addProductManually() {
   const jan = $('#padd-jan').value.trim();
   const name = $('#padd-name').value.trim();
-  const price = $('#padd-price').value.trim();
+  const cost = $('#padd-cost').value.trim();
+  if (!jan) { toast('JANコードを入力してください。', true); return; }
   if (!/^\d{4,14}$/.test(jan)) { toast('JANコードは数字で入力してください(通常13桁)。', true); return; }
   if (!name) { toast('商品名を入力してください。', true); return; }
-  await dbPutProducts([{ jan, name, price }]);
-  $('#padd-jan').value = ''; $('#padd-name').value = ''; $('#padd-price').value = '';
+  await dbPutProducts([{ jan, name, cost }]);
+  $('#padd-jan').value = ''; $('#padd-name').value = ''; $('#padd-cost').value = '';
+  updatePaddButton();
   toast(`登録しました：${name}`);
   goto('products');
 }
@@ -699,6 +729,9 @@ function init() {
   $('#btn-csv-import').addEventListener('click', importCsv);
   $('#btn-product-add').addEventListener('click', () => goto('product-add'));
   $('#btn-padd-save').addEventListener('click', addProductManually);
+  // 必須項目の入力状況を監視(IME変換中も拾えるよう input を使用)
+  $('#padd-jan').addEventListener('input', updatePaddButton);
+  $('#padd-name').addEventListener('input', updatePaddButton);
 
   // 設定
   $('#btn-set-save').addEventListener('click', saveSettings);

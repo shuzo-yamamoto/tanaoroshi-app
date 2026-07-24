@@ -98,6 +98,15 @@ body{
 .hint{font-size:13px; color:#777; margin:10px 2px;}
 .hint.center{text-align:center;}
 .hint.warn{color:#B26A00; font-weight:700;}
+
+/* 必須項目バッジ・未入力時の登録ボタン（README設計判断#10） */
+.req{
+  display:inline-block; margin-left:8px; padding:2px 8px; border-radius:11px;
+  background:var(--shu); color:#fff; font-size:12px; font-weight:700; vertical-align:2px;
+}
+/* .btn-primary 等（詳細度0,1,0）より :disabled 付き（0,2,0）が強いので確実に上書きされる */
+.big-btn:disabled{background:#C9C9C9; color:#fff; box-shadow:none; cursor:not-allowed;}
+.big-btn:disabled:active{transform:none;}
 .empty-msg{text-align:center; color:#888; padding:32px 8px; font-size:15px;}
 
 /* ── リスト ── */

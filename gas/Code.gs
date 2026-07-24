@@ -27,7 +27,9 @@ var SHEET_DATA = '棚卸データ';
 var SHEET_SETTINGS = 'settings';
 var SHEET_LOG = 'opsLog';
 
-var HEADER = ['提出日時', '棚卸名', '棚卸ID', '担当者', 'JANコード', '商品名', '単価', '数量', 'マスタ登録', '読取日時'];
+// G列は v1.1.0 で「単価(売価)」→「原価」に変更(README設計判断#9)。
+// 見出しはシート新規作成時のみ書き込むため、運用中のシートは G1 を手動で直すこと。
+var HEADER = ['提出日時', '棚卸名', '棚卸ID', '担当者', 'JANコード', '商品名', '原価', '数量', 'マスタ登録', '読取日時'];
 
 /** POST受け口 */
 function doPost(e) {
@@ -78,6 +80,8 @@ function submit_(body) {
     if (items.length === 0) return { success: false, error: '明細が0件です。' };
 
     var rows = items.map(function (it) {
+      // cost(v1.1.0以降)を優先し、無ければ price(v1.0系のPWA)を読む
+      var cost = (it.cost === '' || it.cost == null) ? it.price : it.cost;
       return [
         now,
         String(body.session && body.session.name || ''),
@@ -85,7 +89,7 @@ function submit_(body) {
         String(body.staff || ''),
         String(it.jan || ''),
         String(it.name || ''),
-        it.price === '' || it.price == null ? '' : Number(it.price),
+        cost === '' || cost == null ? '' : Number(cost),
         Number(it.qty || 0),
         it.inMaster ? '○' : '×',
         String(it.scannedAt || '')
