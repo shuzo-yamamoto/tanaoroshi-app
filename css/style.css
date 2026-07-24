@@ -151,18 +151,6 @@ body{
   font-weight:800; padding:4px 12px; border-radius:99px; font-size:15px;
 }
 .scan-actions{margin-top:0;}
-/* 📷 カメラ診断パネル(計測用。計測完了後に撤去) */
-.scan-diag{
-  margin:0; background:#0E1116; color:#6BE675;
-  font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12px; line-height:1.55;
-  white-space:pre-wrap; word-break:break-all;
-  padding:10px 12px; border-radius:10px; border:1px solid #2A3140;
-}
-/* ZXingが実際に取り込んだ画像の目視確認用サムネイル(計測用) */
-.scan-diag-thumb{
-  display:block; width:100%; max-width:320px; margin:8px auto 0;
-  border:1px solid #2A3140; border-radius:8px; background:#000;
-}
 
 /* ── 商品確認 ── */
 .product-card{

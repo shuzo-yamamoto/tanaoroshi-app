@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.6.1';
+const APP_VERSION = '1.0.7';
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -174,112 +174,14 @@ async function startScan() {
   updateScanCount();
   $('#zoom-badge').hidden = true;
   try {
-    const { torchSupported, diag } = await Scanner.start($('#scan-video'), onCodeDetected);
+    const { torchSupported } = await Scanner.start($('#scan-video'), onCodeDetected);
     $('#btn-torch').hidden = !torchSupported;
-    renderDiag(diag);
-    // ピント/AFが落ち着いた後の値も拾えるよう、少し後にもう一度計測(施策3・計測用)
-    setTimeout(() => { if (currentView === 'scan') renderDiag(Scanner.readDiag()); }, 1500);
   } catch (e) {
     console.error(e);
     toast('カメラを起動できませんでした。ブラウザのカメラ許可を確認するか、手入力をご利用ください。', true, 4500);
   }
 }
 
-/** 📷 カメラ診断表示(施策3・計測用。計測完了後に撤去/設定裏に隠す — README 不具合ログ#2続報) */
-function renderDiag(diag) {
-  const el = $('#scan-diag');
-  if (!el) return;
-  if (!diag || !diag.available) {
-    el.hidden = false;
-    el.textContent = '📷 カメラ診断: 情報を取得できません(getSettings 非対応の可能性)';
-    return;
-  }
-  const res = (diag.width && diag.height) ? `${diag.width}×${diag.height}` : '不明';
-  const fps = diag.frameRate ? Math.round(diag.frameRate) + 'fps' : '';
-  const focus = diag.focusMode || '(未報告)';
-  const focusCap = diag.focusModesSupported ? diag.focusModesSupported.join('/') : 'API非対応';
-  const zoom = diag.zoom
-    ? `${diag.zoom.min}〜${diag.zoom.max}${diag.zoom.current != null ? `(現${diag.zoom.current})` : ''}`
-    : 'API非対応';
-  const torch = diag.torch === undefined ? '不明' : (diag.torch ? 'あり' : 'なし');
-  const cam = diag.label || diag.facing || '不明';
-
-  // ── v1.0.5 診断強化 ──
-  const v = diag.video;
-  const vidLine = v ? `${v.w}×${v.h} readyState=${v.readyState}${v.paused ? ' (停止中)' : ''}` : '取得不可';
-  const cap = diag.frameCanvas;
-  const capLine = cap ? `${cap.w}×${cap.h}${(cap.w === 0 || cap.h === 0) ? '  ★0です(空画像をデコード中)' : ''}` : '未生成';
-  const lp = diag.loop;
-  const loopLine = lp ? `${lp.intervalMs}ms間隔 / ${lp.confirmCount}回連続一致で確定` : '不明';
-  const st = diag.stats;
-  const statLine = st
-    ? `${st.attempts}回 (${st.perSec}/秒) / 読取 ${st.results}回 / 確定 ${st.confirmed}回`
-    : '未計測';
-  const errNames = st && st.errorCounts ? Object.keys(st.errorCounts) : [];
-  const errLine = errNames.length
-    ? errNames.map(k => `${k}:${st.errorCounts[k]}`).join(', ')
-    : '(なし)';
-  const cbLine = st && st.callbackError ? `★${st.callbackError}` : '(なし)';
-
-  el.hidden = false;
-  el.textContent = [
-    '📷 カメラ診断(計測用)',
-    `解像度(track): ${res} ${fps}`,
-    `video要素: ${vidLine}`,
-    `取込canvas(自前): ${capLine}`,
-    `スキャンループ: ${loopLine}`,
-    `デコード試行: ${statLine}`,
-    `例外内訳: ${errLine}`,
-    `読取後の例外: ${cbLine}`,
-    `ピント: ${focus}(対応: ${focusCap})`,
-    `ズーム: ${zoom}`,
-    `ライト: ${torch}  / レンズ: ${cam}`,
-    `getCapabilities: ${diag.hasGetCapabilities ? '対応' : '非対応'}`
-  ].join('\n');
-}
-
-/** 📸診断表示中に自動遷移を抑止する期限(計測用・撤去予定) */
-let diagHoldUntil = 0;
-const DIAG_HOLD_MS = 20000;
-
-/** 📸 フレーム取り込みテスト(v1.0.5計測) */
-async function runFrameTest() {
-  // 結果を読み終えるまで自動遷移を止める
-  diagHoldUntil = Date.now() + DIAG_HOLD_MS;
-  const el = $('#scan-diag');
-  const img1 = $('#scan-diag-thumb');
-  const img2 = $('#scan-diag-thumb2');
-  el.hidden = false;
-  el.textContent = '📸 フレームを取り込み中…';
-  img1.hidden = true; img2.hidden = true;
-  try {
-    const r = await Scanner.captureFrameTest();
-    if (!r.ok) {
-      el.textContent = '📸 フレーム取り込みテスト\n失敗: ' + r.reason;
-      return;
-    }
-    const fmt = (d) => d.ok ? '✅成功 ' + d.text : '×失敗 ' + d.err;
-    el.textContent = [
-      '📸 フレーム取り込みテスト(同一フレームのA/B比較)',
-      `取込サイズ: ${r.w}×${r.h}`,
-      '',
-      '【A】既定canvas ＝ 現在の自前ループと同条件',
-      `  平均輝度: ${r.normal.brightness}  デコード: ${fmt(r.normal.decode)}`,
-      `  中央帯ROI(高さ${r.bandH}px): ${fmt(r.roi)}`,
-      '',
-      '【B】willReadFrequently canvas ＝ 旧ZXing連続モードと同条件',
-      `  平均輝度: ${r.swCanvas.brightness}  デコード: ${fmt(r.swCanvas.decode)}`,
-      '',
-      '※Bだけ真っ黒/失敗なら、旧方式が読めなかった原因が確定',
-      `※結果を読めるよう自動遷移を${DIAG_HOLD_MS / 1000}秒停止中(🔄で即再開)`,
-      '↓ 上=A(既定) / 下=B(willReadFrequently)'
-    ].join('\n');
-    img1.src = r.normal.thumbUrl; img1.hidden = false;
-    img2.src = r.swCanvas.thumbUrl; img2.hidden = false;
-  } catch (e) {
-    el.textContent = '📸 テスト中にエラー: ' + ((e && e.message) ? e.message : String(e));
-  }
-}
 
 async function updateScanCount() {
   if (!currentSession) return;
@@ -289,12 +191,9 @@ async function updateScanCount() {
 }
 
 function onCodeDetected(code) {
-  // 📸診断の結果を読む間だけ自動遷移を止める(計測用・撤去予定)。
-  // 読取が速くなった結果、結果表示を読む前に商品確認画面へ遷移してしまうため。
-  if (diagHoldUntil && Date.now() < diagHoldUntil) return;
   if (navigator.vibrate) navigator.vibrate(80); // Androidは振動でお知らせ
-  // 読取は成功しているのに後段で例外が出ると「無反応」に見えるため、
-  // 例外を画面に出す(iOSではコンソールを見られないため。v1.0.5計測)
+  // 読取は成功しているのに後段で例外が出ると「無反応」に見えるため、例外を画面に出す
+  // (iOSではコンソールを見られないので、無言で失敗させない安全網)
   return Promise.resolve()
     .then(() => openConfirm(code))
     .catch(e => {
@@ -757,13 +656,6 @@ function init() {
     const on = await Scanner.toggleTorch();
     toast(on ? 'ライトを点けました' : 'ライトを消しました', false, 1200);
   });
-  $('#btn-diag-refresh').addEventListener('click', () => {
-    diagHoldUntil = 0; // 抑止を解除して読取を再開(計測用・撤去予定)
-    $('#scan-diag-thumb').hidden = true;
-    $('#scan-diag-thumb2').hidden = true;
-    renderDiag(Scanner.readDiag());
-  });
-  $('#btn-frame-test').addEventListener('click', runFrameTest); // v1.0.5計測
   $('#btn-manual').addEventListener('click', () => goto('manual'));
   $('#btn-scan-end').addEventListener('click', async () => {
     await Scanner.stop();
