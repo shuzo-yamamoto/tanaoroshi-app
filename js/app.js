@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.6.1';
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -238,8 +238,14 @@ function renderDiag(diag) {
   ].join('\n');
 }
 
+/** 📸診断表示中に自動遷移を抑止する期限(計測用・撤去予定) */
+let diagHoldUntil = 0;
+const DIAG_HOLD_MS = 20000;
+
 /** 📸 フレーム取り込みテスト(v1.0.5計測) */
 async function runFrameTest() {
+  // 結果を読み終えるまで自動遷移を止める
+  diagHoldUntil = Date.now() + DIAG_HOLD_MS;
   const el = $('#scan-diag');
   const img1 = $('#scan-diag-thumb');
   const img2 = $('#scan-diag-thumb2');
@@ -265,6 +271,7 @@ async function runFrameTest() {
       `  平均輝度: ${r.swCanvas.brightness}  デコード: ${fmt(r.swCanvas.decode)}`,
       '',
       '※Bだけ真っ黒/失敗なら、旧方式が読めなかった原因が確定',
+      `※結果を読めるよう自動遷移を${DIAG_HOLD_MS / 1000}秒停止中(🔄で即再開)`,
       '↓ 上=A(既定) / 下=B(willReadFrequently)'
     ].join('\n');
     img1.src = r.normal.thumbUrl; img1.hidden = false;
@@ -282,6 +289,9 @@ async function updateScanCount() {
 }
 
 function onCodeDetected(code) {
+  // 📸診断の結果を読む間だけ自動遷移を止める(計測用・撤去予定)。
+  // 読取が速くなった結果、結果表示を読む前に商品確認画面へ遷移してしまうため。
+  if (diagHoldUntil && Date.now() < diagHoldUntil) return;
   if (navigator.vibrate) navigator.vibrate(80); // Androidは振動でお知らせ
   // 読取は成功しているのに後段で例外が出ると「無反応」に見えるため、
   // 例外を画面に出す(iOSではコンソールを見られないため。v1.0.5計測)
@@ -747,7 +757,12 @@ function init() {
     const on = await Scanner.toggleTorch();
     toast(on ? 'ライトを点けました' : 'ライトを消しました', false, 1200);
   });
-  $('#btn-diag-refresh').addEventListener('click', () => renderDiag(Scanner.readDiag())); // 施策3・計測用
+  $('#btn-diag-refresh').addEventListener('click', () => {
+    diagHoldUntil = 0; // 抑止を解除して読取を再開(計測用・撤去予定)
+    $('#scan-diag-thumb').hidden = true;
+    $('#scan-diag-thumb2').hidden = true;
+    renderDiag(Scanner.readDiag());
+  });
   $('#btn-frame-test').addEventListener('click', runFrameTest); // v1.0.5計測
   $('#btn-manual').addEventListener('click', () => goto('manual'));
   $('#btn-scan-end').addEventListener('click', async () => {
