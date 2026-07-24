@@ -79,6 +79,25 @@ async function dbPutProducts(list) {
   });
 }
 
+/**
+ * 商品マスタを全件置換(スプレッドシート同期用 — README設計判断#13/#14)。
+ * clear と put を1トランザクションで行うため、途中で失敗すれば既存マスタは残る。
+ * 呼び出し側は「全ページを取得し終えてから」渡すこと。
+ */
+async function dbReplaceProducts(list) {
+  const db = await dbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('products', 'readwrite');
+    const st = tx.objectStore('products');
+    st.clear();
+    const now = new Date().toISOString();
+    for (const p of list) st.put({ ...p, updatedAt: now });
+    tx.oncomplete = () => resolve(list.length);
+    tx.onerror = () => reject(tx.error || new Error('商品マスタの置き換えに失敗しました。'));
+    tx.onabort = () => reject(tx.error || new Error('商品マスタの置き換えが中断されました(端末の空き容量を確認してください)。'));
+  });
+}
+
 /** JANで商品1件取得(なければnull) */
 async function dbGetProduct(jan) {
   const db = await dbOpen();

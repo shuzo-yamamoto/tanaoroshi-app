@@ -11,7 +11,12 @@
  */
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
+
+/** 商品マスタ同期の1回あたり取得件数(README設計判断#13) */
+const SYNC_PAGE_SIZE = 2000;
+/** 1リクエストの上限時間。応答が返らずローディングが残り続けるのを防ぐ */
+const SYNC_TIMEOUT_MS = 60000;
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -439,8 +444,95 @@ async function renderProducts() {
   const count = await dbCountProducts();
   $('#master-count').textContent = count.toLocaleString('ja-JP');
   const conf = Settings.load();
-  $('#master-updated').textContent = conf.masterUpdatedAt ? '最終取込: ' + fmtDate(conf.masterUpdatedAt) : '';
+  if (conf.masterUpdatedAt) {
+    const how = conf.masterSource === 'sync' ? '同期' : '取込';
+    $('#master-updated').textContent = `最終${how}: ${fmtDate(conf.masterUpdatedAt)}`;
+  } else {
+    $('#master-updated').textContent = '未取込';
+  }
   renderProductSearch();
+}
+
+/* ── スプレッドシートから同期(設計判断#11) ── */
+
+/** GASへPOSTし data を返す。失敗時は throw(呼び出し側でtoast表示 — 標準§3.1) */
+async function gasPost(payload, timeoutMs = SYNC_TIMEOUT_MS) {
+  const conf = Settings.load();
+  const ctl = new AbortController();
+  const tm = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(conf.gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // プリフライト回避
+      body: JSON.stringify({ token: conf.token || '', ...payload }),
+      signal: ctl.signal
+    });
+    // GASはURL誤り・デプロイ設定違いのときHTMLやエラーページを返す。
+    // その場合 res.json() の例外文がそのまま画面に出ると原因が分からないので言い換える
+    if (!res.ok) throw new Error(`サーバーがエラーを返しました(HTTP ${res.status})。提出先URLとデプロイ設定を確認してください。`);
+    const text = await res.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      throw new Error('応答を解釈できませんでした。提出先URLが正しいか、デプロイの「アクセスできるユーザー」が「全員」になっているか確認してください。');
+    }
+    if (!json.success) throw new Error(json.error || '不明なエラー');
+    return json.data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('応答がありません(60秒)。電波と提出先URLを確認してください。');
+    throw e;
+  } finally {
+    clearTimeout(tm);
+  }
+}
+
+async function syncProducts() {
+  const conf = Settings.load();
+  if (!conf.gasUrl) {
+    toast('先に「設定」タブで提出先URLを登録してください。', true, 4000);
+    goto('settings');
+    return;
+  }
+  if (!navigator.onLine) {
+    toast('オフラインです。電波のある場所で同期してください(今のマスタはそのまま使えます)。', true, 4500);
+    return;
+  }
+
+  spinner(true, '商品マスタを同期中…');
+  try {
+    // 全ページを取得し終えてから置き換える。途中で切れても既存マスタを壊さない(設計判断#13)
+    const all = [];
+    let offset = 0, total = 0;
+    for (;;) {
+      const data = await gasPost({ action: 'getProducts', offset, limit: SYNC_PAGE_SIZE });
+      total = Number(data.total) || 0;
+      for (const it of data.items) all.push(it);
+      offset += Number(data.count) || 0;
+      spinner(true, `商品マスタを同期中… ${offset.toLocaleString('ja-JP')} / ${total.toLocaleString('ja-JP')}件`);
+      if (!data.count || offset >= total) break;
+    }
+    if (all.length === 0) {
+      throw new Error(`スプレッドシートの「商品マスタ」から有効な商品を取得できませんでした(${total.toLocaleString('ja-JP')}行を確認)。JANコードの列を確認してください。`);
+    }
+
+    spinner(true, `端末の商品マスタを更新中…(${all.length.toLocaleString('ja-JP')}件)`);
+    await dbReplaceProducts(all);
+
+    const c = Settings.load();
+    c.masterUpdatedAt = new Date().toISOString();
+    c.masterSource = 'sync';
+    Settings.save(c);
+
+    const skipped = total - all.length;
+    toast(`${all.length.toLocaleString('ja-JP')}件を同期しました${skipped > 0 ? `(JAN不正 ${skipped.toLocaleString('ja-JP')}行はスキップ)` : ''}。`, false, 4000);
+    renderProducts();
+  } catch (e) {
+    console.error(e);
+    toast('同期に失敗しました：' + e.message + '(端末の商品マスタはそのまま残っています)', true, 6000);
+  } finally {
+    spinner(false);
+  }
 }
 
 async function renderProductSearch() {
@@ -569,6 +661,7 @@ async function importCsv() {
     await dbPutProducts(list);
     const conf = Settings.load();
     conf.masterUpdatedAt = new Date().toISOString();
+    conf.masterSource = 'csv';
     Settings.save(conf);
     toast(`${list.length.toLocaleString('ja-JP')}件を取り込みました${skipped ? `(JAN不正 ${skipped}行はスキップ)` : ''}。`);
     csvParsed = null;
@@ -721,6 +814,7 @@ function init() {
   $('#btn-del-session').addEventListener('click', deleteSession);
 
   // 商品マスタ
+  $('#btn-sync-products').addEventListener('click', syncProducts);
   $('#product-search').addEventListener('input', renderProductSearch);
   $('#csv-file').addEventListener('change', e => {
     if (e.target.files[0]) handleCsvFile(e.target.files[0]);

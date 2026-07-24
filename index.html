@@ -162,8 +162,10 @@
   <input id="product-search" class="big-input" type="search" placeholder="🔍 商品名・JANで検索">
   <ul id="product-list" class="card-list"></ul>
   <div class="stack">
+    <button id="btn-sync-products" class="big-btn btn-primary">☁️ スプレッドシートから同期</button>
+    <p class="hint">商品マスタの正はスプレッドシートです。更新されたら同期を押してください（端末のマスタは全件入れ替わります）。CSV取り込みは通信できないときの予備で、既存マスタに追加・上書きします。</p>
     <label class="big-btn btn-secondary file-btn">
-      📥 CSVから商品マスタを取り込む
+      📥 CSVから取り込む（予備）
       <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
     </label>
     <button id="btn-product-add" class="big-btn btn-ghost">＋ 商品を1件ずつ登録する</button>
