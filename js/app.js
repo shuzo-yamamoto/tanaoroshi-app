@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -207,10 +207,14 @@ function renderDiag(diag) {
   // ── v1.0.5 診断強化 ──
   const v = diag.video;
   const vidLine = v ? `${v.w}×${v.h} readyState=${v.readyState}${v.paused ? ' (停止中)' : ''}` : '取得不可';
-  const cap = diag.capture;
+  const cap = diag.frameCanvas;
   const capLine = cap ? `${cap.w}×${cap.h}${(cap.w === 0 || cap.h === 0) ? '  ★0です(空画像をデコード中)' : ''}` : '未生成';
+  const lp = diag.loop;
+  const loopLine = lp ? `${lp.intervalMs}ms間隔 / ${lp.confirmCount}回連続一致で確定` : '不明';
   const st = diag.stats;
-  const statLine = st ? `${st.attempts}回 (${st.perSec}/秒) / 成功 ${st.results}回` : '未計測';
+  const statLine = st
+    ? `${st.attempts}回 (${st.perSec}/秒) / 読取 ${st.results}回 / 確定 ${st.confirmed}回`
+    : '未計測';
   const errNames = st && st.errorCounts ? Object.keys(st.errorCounts) : [];
   const errLine = errNames.length
     ? errNames.map(k => `${k}:${st.errorCounts[k]}`).join(', ')
@@ -222,7 +226,8 @@ function renderDiag(diag) {
     '📷 カメラ診断(計測用)',
     `解像度(track): ${res} ${fps}`,
     `video要素: ${vidLine}`,
-    `ZXing取込canvas: ${capLine}`,
+    `取込canvas(自前): ${capLine}`,
+    `スキャンループ: ${loopLine}`,
     `デコード試行: ${statLine}`,
     `例外内訳: ${errLine}`,
     `読取後の例外: ${cbLine}`,
@@ -236,29 +241,35 @@ function renderDiag(diag) {
 /** 📸 フレーム取り込みテスト(v1.0.5計測) */
 async function runFrameTest() {
   const el = $('#scan-diag');
-  const img = $('#scan-diag-thumb');
+  const img1 = $('#scan-diag-thumb');
+  const img2 = $('#scan-diag-thumb2');
   el.hidden = false;
   el.textContent = '📸 フレームを取り込み中…';
+  img1.hidden = true; img2.hidden = true;
   try {
     const r = await Scanner.captureFrameTest();
     if (!r.ok) {
-      img.hidden = true;
       el.textContent = '📸 フレーム取り込みテスト\n失敗: ' + r.reason;
       return;
     }
-    img.src = r.thumbUrl;
-    img.hidden = false;
+    const fmt = (d) => d.ok ? '✅成功 ' + d.text : '×失敗 ' + d.err;
     el.textContent = [
-      '📸 フレーム取り込みテスト',
+      '📸 フレーム取り込みテスト(同一フレームのA/B比較)',
       `取込サイズ: ${r.w}×${r.h}`,
-      `平均輝度: ${r.brightness} (0=真っ黒 / 255=真っ白)`,
-      `全画面デコード: ${r.full.ok ? '✅成功 ' + r.full.text : '×失敗 ' + r.full.err}`,
-      `中央帯ROIデコード(高さ${r.bandH}px): ${r.roi.ok ? '✅成功 ' + r.roi.text : '×失敗 ' + r.roi.err}`,
       '',
-      '↓ ZXingが受け取った画像(サムネイル)'
+      '【A】既定canvas ＝ 現在の自前ループと同条件',
+      `  平均輝度: ${r.normal.brightness}  デコード: ${fmt(r.normal.decode)}`,
+      `  中央帯ROI(高さ${r.bandH}px): ${fmt(r.roi)}`,
+      '',
+      '【B】willReadFrequently canvas ＝ 旧ZXing連続モードと同条件',
+      `  平均輝度: ${r.swCanvas.brightness}  デコード: ${fmt(r.swCanvas.decode)}`,
+      '',
+      '※Bだけ真っ黒/失敗なら、旧方式が読めなかった原因が確定',
+      '↓ 上=A(既定) / 下=B(willReadFrequently)'
     ].join('\n');
+    img1.src = r.normal.thumbUrl; img1.hidden = false;
+    img2.src = r.swCanvas.thumbUrl; img2.hidden = false;
   } catch (e) {
-    img.hidden = true;
     el.textContent = '📸 テスト中にエラー: ' + ((e && e.message) ? e.message : String(e));
   }
 }

@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'tanaoroshi-v1.0.5';
+const CACHE_VERSION = 'tanaoroshi-v1.0.6';
 const APP_SHELL = [
   './',
   './index.html',
