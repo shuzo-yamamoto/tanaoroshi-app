@@ -129,18 +129,27 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
 .foot{ margin-top:16px; text-align:right; font-size:9pt; color:#8A8579; }
 
 /* ── QRページ ── */
-.qr-lead{ background:var(--kinari); border-left:6px solid var(--shu); padding:12px 16px;
-  font-size:13pt; margin:0 0 18px; border-radius:0 10px 10px 0; }
+.qr-lead{ background:var(--kinari); border-left:6px solid var(--shu); padding:10px 16px;
+  font-size:12.5pt; margin:0 0 12px; border-radius:0 10px 10px 0; }
 .qr-lead b{ color:var(--shu); }
-.qrgrid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.qrcard{ border:2px solid var(--sumi); border-radius:12px; padding:14px 12px; text-align:center; break-inside:avoid; }
-.qrcard .st{ font-size:15pt; font-weight:bold; color:var(--sumi); margin-bottom:10px; }
-.qrslot{ width:158px; height:158px; margin:0 auto; border:1px dashed var(--line); border-radius:6px;
+.qrgrid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.qrcard{ border:2px solid var(--sumi); border-radius:12px; padding:8px 10px; text-align:center; break-inside:avoid; }
+.qrcard .st{ font-size:13.5pt; font-weight:bold; color:var(--sumi); margin-bottom:6px; }
+.qrslot{ width:128px; height:128px; margin:0 auto; border:1px dashed var(--line); border-radius:6px;
   background-size:contain; background-repeat:no-repeat; background-position:center;
   display:flex; align-items:center; justify-content:center; text-align:center;
   color:#B7B2A8; font-size:8pt; padding:6px; }
-.qrcard .cap{ font-size:9.5pt; color:#555; margin-top:8px; }
-.qr-note{ margin-top:16px; border:1.5px solid var(--line); border-radius:10px; padding:10px 14px;
+.qrcard .cap{ font-size:9pt; color:#555; margin-top:5px; }
+/* QRを読み取ったあとにすること */
+.after-qr{ margin-top:16px; border:2px solid var(--wakaba); border-radius:12px; overflow:hidden; }
+.after-title{ background:var(--wakaba); color:#fff; font-weight:bold; font-size:12.5pt; padding:8px 14px; }
+.after-body{ display:flex; gap:16px; align-items:center; padding:12px 14px; }
+.after-steps{ flex:1 1 auto; }
+.astep{ display:flex; gap:10px; align-items:flex-start; font-size:12pt; margin-bottom:8px; }
+.anum{ flex:0 0 auto; width:26px; height:26px; border-radius:50%; background:var(--sumi); color:#fff;
+  font-weight:bold; font-size:12pt; display:flex; align-items:center; justify-content:center; }
+.afin{ font-size:12pt; font-weight:bold; color:var(--wakaba); margin-top:6px; }
+.qr-note{ margin-top:12px; border:1.5px solid var(--line); border-radius:10px; padding:10px 14px;
   font-size:10.5pt; color:#555; background:#FBFAF6; }
 .qr-note b{ color:var(--sumi); }
 .qr-caution{ margin-top:10px; font-size:10pt; color:var(--shu); font-weight:bold; }
@@ -407,10 +416,31 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
     <div class="contact">担当者連絡先：<span class="fill">&nbsp;</span></div>
   </div>
 
+  <div class="sec-h" style="margin-top:18px;">■ 作業を中断・再開するとき</div>
+  <div class="trouble">
+    <ul>
+      <li><b>途中でやめたいとき：</b>登録したデータは<u>自動で保存されています</u>。そのままアプリを閉じてかまいません。</li>
+      <li><b>つづきをするとき：</b>ホーム →「棚卸」→<b>「以前のデータに追加する」</b>を選ぶと、続きから数えられます。<u>名前を付け直す必要はありません。</u></li>
+    </ul>
+    <div style="display:flex; align-items:center; gap:16px; margin-top:10px;">
+      <div class="m" style="width:180px;">
+        <div class="bar"><span>棚卸を始める</span><span class="pill on">オンライン</span></div>
+        <div class="body" style="padding:12px 9px;">
+          <div class="btn b-shu">＋ 新しく棚卸を始める</div>
+          <div class="btn b-ai hi">📂 以前のデータに追加する</div>
+        </div>
+      </div>
+      <div style="font-size:11pt; color:#555;">
+        ← つづきをするときは<br><b style="color:var(--ai);">「以前のデータに追加する」</b>を選びます。<br>
+        前回のデータの一覧が出るので、自分の棚卸を選んでください。
+      </div>
+    </div>
+  </div>
+
   <div class="foot">画箋堂 棚卸アプリ 使い方ガイド ／ この用紙は各店舗で掲示・保管してください</div>
 </section>
 
-<!-- ═══════════════ ページ4：QRコードで棚卸をはじめる ═══════════════ -->
+<!-- ═══════════════ ページ5：QRコードで棚卸をはじめる ═══════════════ -->
 <section class="page">
   <div class="title-band" style="border-top-color:var(--wakaba);">
     <h1>さあ、棚卸をはじめましょう</h1>
@@ -419,7 +449,7 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
 
   <p class="qr-lead">
     ここまで読んだら、下の<b>【自分の店舗】</b>のQRコードを、<b>スマホのカメラ</b>で読み取ってください。<br>
-    アプリが開いたら、このガイドの<b>手順①</b>からはじめます。
+    読み取ったら、<b>下の「読み取ったあとにすること」</b>へ進みます。
   </p>
 
   <div class="qrgrid">
@@ -445,10 +475,28 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
     </div>
   </div>
 
+  <div class="after-qr">
+    <div class="after-title">QRを読み取ったあとにすること（2つだけ）</div>
+    <div class="after-body">
+      <div class="after-steps">
+        <div class="astep"><span class="anum">1</span><span>「初期設定が完了しました」と出たら、<b>「担当者名」</b>の欄に<b>自分の名前</b>を入力します。</span></div>
+        <div class="astep"><span class="anum">2</span><span><b>「設定を保存する」</b>をタップします。</span></div>
+        <div class="afin">→ これで準備完了です。ホームの<b>「棚卸」</b>から、このガイドの<b>手順①</b>をはじめてください。</div>
+      </div>
+      <div class="m" style="width:180px; flex:0 0 auto;">
+        <div class="bar"><span>設定</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="lbl">担当者名（自分の名前）</div>
+          <div class="inp hi">山本</div>
+          <div class="btn b-shu hi" style="margin-top:9px;">設定を保存する</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="qr-note">
-    <b>※ QRコードを読み取るのは、最初の1回だけでOKです。</b><br>
-    一度設定できたら、次回からはホーム画面の<b>アプリのアイコン</b>から開けます（QRコードは不要）。<br>
-    読み取ったあとは「初期設定が完了しました」と表示されます。そのまま手順①へ進んでください。
+    <b>※ QRコードを読み取るのは、最初の1回だけでOKです。</b>
+    一度設定できたら、次回からはホーム画面の<b>アプリのアイコン</b>から開けます（QRコードは不要）。
     <div class="qr-caution">▲ このQRコードには店舗の設定情報が含まれます。店内での使用にとどめ、外部には共有しないでください。</div>
   </div>
 
