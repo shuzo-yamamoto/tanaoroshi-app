@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>画箋堂 棚卸アプリ 使い方ガイド</title>
+<style>
+/* ============================================================
+   画箋堂 棚卸アプリ 使い方ガイド（印刷用・A4縦）
+   パレット: 墨 #1F2430 / 生成り #F7F5F0 / 朱 #D93A2B / 藍 #2B5F9E / 若葉 #2E8B57 / 山吹 #E8A020
+   方針: スマホに不慣れな方でも迷わない。大きな文字・広い余白・白黒印刷でも判読可。
+   ============================================================ */
+:root{
+  --sumi:#1F2430; --kinari:#F7F5F0; --shu:#D93A2B; --ai:#2B5F9E;
+  --wakaba:#2E8B57; --yamabuki:#E8A020; --line:#CFC9BD;
+}
+@page{ size:A4 portrait; margin:13mm 12mm; }
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family:"Meiryo","Yu Gothic","Hiragino Kaku Gothic ProN",sans-serif;
+  color:#15181F; font-size:12.5pt; line-height:1.5;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;
+}
+.page{ page-break-after:always; }
+.page:last-child{ page-break-after:auto; }
+
+/* ── 見出し ── */
+.title-band{
+  border-top:6px solid var(--shu); border-bottom:2px solid var(--sumi);
+  padding:10px 0 12px; margin-bottom:14px;
+}
+h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
+.subtitle{ font-size:12pt; color:#4A4F5A; margin-top:4px; }
+.lead{
+  background:var(--kinari); border-left:6px solid var(--ai);
+  padding:12px 16px; font-size:13pt; margin:0 0 16px; border-radius:0 10px 10px 0;
+}
+.sec-h{ font-size:13pt; font-weight:bold; color:var(--sumi); margin:2px 0 10px;
+  border-bottom:2px solid var(--line); padding-bottom:4px; break-after:avoid; }
+
+/* ── 手順ステップ ── */
+.step{ display:flex; gap:14px; align-items:center; padding:8px 0; break-inside:avoid; }
+.step + .step{ border-top:1px dashed var(--line); }
+.num{
+  flex:0 0 auto; width:38px; height:38px; border-radius:50%;
+  background:var(--sumi); color:#fff; font-size:17pt; font-weight:bold;
+  display:flex; align-items:center; justify-content:center;
+}
+.step .txt{ flex:1 1 auto; font-size:13pt; }
+.step .txt b{ color:var(--sumi); }
+.step .txt .note{ display:block; font-size:11pt; color:#555; margin-top:3px; }
+.step .shot{ flex:0 0 auto; }
+
+/* ── 画面の再現（スクリーンショット相当） ── */
+.m{
+  width:196px; border:2px solid #B9B3A6; border-radius:12px; overflow:hidden;
+  background:var(--kinari); font-size:8.4pt; line-height:1.35; color:var(--sumi);
+}
+.m .bar{
+  background:var(--sumi); color:#fff; display:flex; align-items:center;
+  justify-content:space-between; padding:6px 8px; font-size:8pt; font-weight:bold;
+}
+.m .bar .pill{ font-size:7pt; padding:2px 6px; border-radius:9px; font-weight:bold; }
+.pill.on{ background:var(--wakaba); color:#fff; }
+.pill.off{ background:var(--yamabuki); color:#fff; }
+.m .body{ padding:9px; }
+.m .lbl{ font-weight:bold; font-size:8pt; margin:2px 0 4px; }
+.m .inp{ background:#fff; border:1.5px solid var(--line); border-radius:7px; padding:6px 7px; font-size:8pt; color:#555; }
+.m .btn{ border-radius:8px; padding:8px 6px; text-align:center; font-weight:bold; color:#fff; font-size:8.4pt; margin-top:7px; }
+.b-shu{ background:var(--shu); } .b-ai{ background:var(--ai); } .b-wakaba{ background:var(--wakaba); }
+.b-ghost{ background:#fff; color:var(--sumi); border:1.5px solid var(--line); }
+.b-yamabuki{ background:var(--yamabuki); }
+
+/* モード選択タイル */
+.tiles{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.tile{ background:#fff; border:1.5px solid var(--line); border-radius:9px; padding:8px 4px; text-align:center; }
+.tile .ic{ font-size:15pt; display:block; }
+.tile .nm{ font-weight:bold; font-size:8.4pt; margin-top:2px; }
+.tile .ds{ font-size:6.6pt; color:#888; }
+.tile.dim{ color:#B7B2A8; } .tile.dim .nm{ color:#B7B2A8; }
+
+/* スキャン画面 */
+.cam{ position:relative; background:#20242c; height:118px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; color:#fff; }
+.cam .gtop,.cam .gbot{ position:absolute; left:0; right:0; text-align:center; font-size:7pt;
+  background:rgba(0,0,0,.45); padding:3px 0; }
+.cam .gtop{ top:0; } .cam .gbot{ bottom:0; }
+.cam .line{ position:absolute; left:8%; right:8%; top:50%; height:3px; background:var(--shu); box-shadow:0 0 6px var(--shu); }
+.barcode{ height:46px; width:120px; background:
+  repeating-linear-gradient(90deg,#111 0,#111 2px,#fff 2px,#fff 4px,#111 4px,#111 5px,#fff 5px,#fff 8px); }
+
+/* 商品カード（確認画面） */
+.card{ background:#fff; border:1.5px solid var(--line); border-radius:9px; padding:8px; }
+.card .ok{ color:var(--wakaba); font-weight:bold; font-size:7.6pt; }
+.card .ng{ color:var(--shu); font-weight:bold; font-size:7.6pt; }
+.card .pname{ font-weight:bold; font-size:9.5pt; margin:3px 0; }
+.card .meta{ font-size:7.4pt; color:#666; }
+.qtyrow{ display:flex; align-items:center; justify-content:center; gap:8px; margin:7px 0 2px; }
+.qbtn{ width:26px; height:26px; border-radius:50%; background:#EDE9DF; text-align:center; line-height:26px; font-weight:bold; }
+.qval{ width:40px; text-align:center; border:1.5px solid var(--line); border-radius:7px; padding:4px 0; background:#fff; font-weight:bold; }
+
+/* データ一覧 */
+.summary{ display:flex; justify-content:space-between; background:#fff; border:1.5px solid var(--line);
+  border-radius:8px; padding:6px 9px; font-weight:bold; font-size:8.4pt; }
+.li{ display:flex; align-items:center; gap:6px; background:#fff; border:1.5px solid var(--line);
+  border-radius:8px; padding:6px 8px; margin-top:6px; }
+.li .grow{ flex:1; } .li .lt{ font-weight:bold; font-size:8pt; }
+.li .ls{ font-size:6.8pt; color:#777; }
+.li .lq{ font-weight:bold; font-size:9pt; } .li .del{ font-size:10pt; }
+
+/* トースト */
+.toast{ background:var(--sumi); color:#fff; border-radius:8px; padding:7px 9px; font-size:8pt; text-align:center; margin-top:7px; }
+
+/* ── 強調（赤リング＋矢印。白黒でも太い輪郭と矢印形で判別可） ── */
+/* 白フチ＋朱リング。赤いボタンの上でも輪郭が見え、白黒印刷でも太い輪として読める */
+.hi{ box-shadow:0 0 0 2px #fff, 0 0 0 4.5px var(--shu); border-radius:9px; position:relative; }
+.tapmark{ display:inline-block; color:var(--shu); font-weight:bold; font-size:9pt; }
+.arrow-note{ display:flex; align-items:center; gap:6px; margin-top:6px; color:var(--shu); font-weight:bold; font-size:10.5pt; }
+.arrow-note::before{ content:"→"; font-size:15pt; }
+
+/* ── 困ったときは ── */
+.trouble{ border:2.5px solid var(--sumi); border-radius:12px; padding:14px 16px; margin-top:8px; }
+.trouble h3{ margin:0 0 8px; font-size:14pt; color:var(--sumi); }
+.trouble ul{ margin:0; padding-left:20px; }
+.trouble li{ font-size:12pt; margin-bottom:9px; }
+.trouble li b{ color:var(--shu); }
+.contact{ margin-top:14px; font-size:13pt; font-weight:bold; }
+.contact .fill{ display:inline-block; min-width:230px; border-bottom:2px solid var(--sumi); height:1.4em; vertical-align:bottom; }
+.foot{ margin-top:16px; text-align:right; font-size:9pt; color:#8A8579; }
+
+/* ── QRページ ── */
+.qr-lead{ background:var(--kinari); border-left:6px solid var(--shu); padding:12px 16px;
+  font-size:13pt; margin:0 0 18px; border-radius:0 10px 10px 0; }
+.qr-lead b{ color:var(--shu); }
+.qrgrid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.qrcard{ border:2px solid var(--sumi); border-radius:12px; padding:14px 12px; text-align:center; break-inside:avoid; }
+.qrcard .st{ font-size:15pt; font-weight:bold; color:var(--sumi); margin-bottom:10px; }
+.qrslot{ width:158px; height:158px; margin:0 auto; border:1px dashed var(--line); border-radius:6px;
+  background-size:contain; background-repeat:no-repeat; background-position:center;
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  color:#B7B2A8; font-size:8pt; padding:6px; }
+.qrcard .cap{ font-size:9.5pt; color:#555; margin-top:8px; }
+.qr-note{ margin-top:16px; border:1.5px solid var(--line); border-radius:10px; padding:10px 14px;
+  font-size:10.5pt; color:#555; background:#FBFAF6; }
+.qr-note b{ color:var(--sumi); }
+.qr-caution{ margin-top:10px; font-size:10pt; color:var(--shu); font-weight:bold; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ ページ1 ═══════════════ -->
+<section class="page">
+  <div class="title-band">
+    <h1>画箋堂　棚卸アプリ　使い方ガイド</h1>
+    <div class="subtitle">— 商品のバーコードを読み取るだけで、かんたんに棚卸ができます —</div>
+  </div>
+
+  <p class="lead">
+    このアプリで、商品のバーコードを読み取るだけでかんたんに棚卸ができます。<br>
+    下の手順どおりに進めてください。
+  </p>
+
+  <div class="sec-h">■ 棚卸のはじめかた</div>
+
+  <!-- 1 -->
+  <div class="step">
+    <div class="num">1</div>
+    <div class="txt">
+      <b>ホーム画面のアイコンをタップして、アプリを開きます。</b>
+      <span class="note">画面の右上が「オンライン」になっていればOKです（この端末は「本店」に設定済みです）。</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>在庫ツール</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="tiles">
+            <div class="tile"><span class="ic">📦</span><span class="nm">棚卸</span><span class="ds">商品を読み取り数える</span></div>
+            <div class="tile dim"><span class="ic">🛒</span><span class="nm">発注</span><span class="ds">準備中</span></div>
+            <div class="tile dim"><span class="ic">📍</span><span class="nm">在庫確認</span><span class="ds">準備中</span></div>
+            <div class="tile dim"><span class="ic">🚚</span><span class="nm">入荷</span><span class="ds">準備中</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="step">
+    <div class="num">2</div>
+    <div class="txt">
+      <b>「棚卸」をタップします。</b>
+      <span class="arrow-note">緑や赤の丸で囲んだところを押します</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>在庫ツール</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="tiles">
+            <div class="tile hi"><span class="ic">📦</span><span class="nm">棚卸</span><span class="ds">商品を読み取り数える</span></div>
+            <div class="tile dim"><span class="ic">🛒</span><span class="nm">発注</span><span class="ds">準備中</span></div>
+            <div class="tile dim"><span class="ic">📍</span><span class="nm">在庫確認</span><span class="ds">準備中</span></div>
+            <div class="tile dim"><span class="ic">🚚</span><span class="nm">入荷</span><span class="ds">準備中</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="step">
+    <div class="num">3</div>
+    <div class="txt">
+      <b>「新しく始める」を選び、自分の名前を入力して「開始」をタップします。</b>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>‹ 戻る　棚卸名の入力</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="lbl">棚卸データの名前</div>
+          <div class="inp">例）本店1F 画材</div>
+          <div class="btn b-shu hi">この名前で棚卸を開始する</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="step">
+    <div class="num">4</div>
+    <div class="txt">
+      <b>商品のバーコードにカメラを向けます。</b>
+      <span class="note">画面に入るだけで自動的に読み取ります（赤い線にぴったり合わせなくても大丈夫です）。</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>スキャン</span><span class="pill on">オンライン</span></div>
+        <div class="cam">
+          <div class="gtop">バーコードを赤い線に合わせてください</div>
+          <div class="barcode"></div>
+          <div class="line"></div>
+          <div class="gbot">画面をタップするとズーム</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="step">
+    <div class="num">5</div>
+    <div class="txt">
+      <b>商品名が表示されたら、数量を確認・入力して「登録」をタップします。</b>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>数量の入力</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="card"><div class="ok">✓ 商品マスタに登録済み</div>
+            <div class="pname">ホルベイン 透明水彩</div>
+            <div class="meta">JAN: 4900669031062　原価 ¥236</div></div>
+          <div class="qtyrow"><span class="qbtn">−</span><span class="qval">2</span><span class="qbtn">＋</span></div>
+          <div class="btn b-shu hi">登録して次をスキャン</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="sec-h" style="margin-top:14px;">■ 読み取りのコツ・こんなときは</div>
+
+  <!-- 6 -->
+  <div class="step">
+    <div class="num">6</div>
+    <div class="txt">
+      <b>同じ商品をもう一度読み取ると、「すでに◯点登録済みです」と表示されます。</b>
+      <span class="note">これは間違いではありません。場所ごとに数える場合はそのまま登録してください。</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>数量の入力</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="card"><div class="ok">✓ 商品マスタに登録済み</div>
+            <div class="pname">ホルベイン 透明水彩</div>
+            <div class="meta">JAN: 4900669031062</div></div>
+          <div class="toast" style="background:#8a6d00;color:#fff;">⚠ この商品はすでに 3 点登録されています</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7 -->
+  <div class="step">
+    <div class="num">7</div>
+    <div class="txt">
+      <b>バーコードがうまく読み取れないときは「読み取りをスキップして手入力」から、数字を直接入力できます。</b>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>‹ 戻る　JAN手入力</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="lbl">JANコードを入力</div>
+          <div class="inp">4901234567894</div>
+          <div class="btn b-shu hi">この番号で検索する</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <div class="step">
+    <div class="num">8</div>
+    <div class="txt">
+      <b>一覧にない商品の場合は、「マスタに見つかりません」と表示され、商品名を入力する欄が出てきます。</b>
+      <span class="note">商品名を入力して登録してください。</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>数量の入力</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="card"><div class="ng">⚠ 商品マスタに見つかりません</div>
+            <div class="meta">JAN: 4909999999999</div>
+            <div class="inp hi" style="margin-top:5px;">商品名（分かれば入力）</div></div>
+          <div class="btn b-shu">登録して次をスキャン</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-h" style="margin-top:14px;">■ 数え終わったら</div>
+
+  <!-- 9 -->
+  <div class="step">
+    <div class="num">9</div>
+    <div class="txt">
+      <b>すべて数え終わったら「棚卸を終了する」をタップします。</b>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>スキャン</span><span class="pill on">オンライン</span></div>
+        <div class="body" style="padding:16px 9px;">
+          <div style="text-align:center; font-size:8pt; color:#777; margin-bottom:10px;">数え終わったら ↓</div>
+          <div class="btn b-shu hi" style="background:#C0392B;">棚卸を終了する</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10 -->
+  <div class="step">
+    <div class="num">10</div>
+    <div class="txt">
+      <b>登録した商品の一覧が表示されます。</b>
+      <span class="note">数量を間違えた場合はその数量をタップして直せます。削除したい場合は🗑をタップします。</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>データ確認</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="summary"><span>2 品目</span><span>合計 5 点</span></div>
+          <div class="li"><span class="grow"><span class="lt">ホルベイン 透明水彩</span><br><span class="ls">4900669031062</span></span><span class="lq hi">3</span><span class="del hi">🗑</span></div>
+          <div class="li"><span class="grow"><span class="lt">アクリルガッシュ</span><br><span class="ls">4900669031291</span></span><span class="lq">2</span><span class="del">🗑</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11 -->
+  <div class="step">
+    <div class="num">11</div>
+    <div class="txt">
+      <b>内容を確認したら「Webへ提出」をタップして完了です。</b>
+      <span class="note">「提出しました」と出たら成功です。おつかれさまでした。</span>
+    </div>
+    <div class="shot">
+      <div class="m">
+        <div class="bar"><span>データ確認</span><span class="pill on">オンライン</span></div>
+        <div class="body">
+          <div class="btn b-wakaba hi">☁️ Webへ提出（スプレッドシート保存）</div>
+          <div class="toast" style="background:#2E8B57;">提出しました（5行を保存）。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ ページ3 ═══════════════ -->
+<section class="page">
+  <div class="sec-h">■ 困ったときは</div>
+
+  <div class="trouble">
+    <h3>こんなときは、あわてずに ↓</h3>
+    <ul>
+      <li><b>画面に「オフラインです」と出た場合：</b>電波の届く場所に戻ってから、もう一度「Webへ提出」を押してください。
+        <u>登録したデータは消えずに端末に残っています。</u></li>
+      <li><b>バーコードがなかなか読み取れない場合：</b>商品を画面いっぱいに大きく写すか、少し近づけてみてください。</li>
+      <li><b>その他、動かない・わからないことがあれば：</b>下記の担当者までご連絡ください。</li>
+    </ul>
+
+    <div style="display:flex; align-items:center; gap:16px; margin-top:12px;">
+      <div class="m" style="width:170px;">
+        <div class="bar"><span>スキャン</span><span class="pill off">オフライン</span></div>
+        <div class="body" style="padding:8px;"><div class="toast" style="background:#8a6d00;">オフラインです。電波のある場所で提出してください</div></div>
+      </div>
+      <div style="font-size:11pt; color:#555;">
+        ← 電波がないときは、右上のバッジが<br><b style="color:#8a6d00;">「オフライン」（黄色）</b>になります。<br>
+        あせらず、電波の届く場所へ移動してください。
+      </div>
+    </div>
+
+    <div class="contact">担当者連絡先：<span class="fill">&nbsp;</span></div>
+  </div>
+
+  <div class="foot">画箋堂 棚卸アプリ 使い方ガイド ／ この用紙は各店舗で掲示・保管してください</div>
+</section>
+
+<!-- ═══════════════ ページ4：QRコードで棚卸をはじめる ═══════════════ -->
+<section class="page">
+  <div class="title-band" style="border-top-color:var(--wakaba);">
+    <h1>さあ、棚卸をはじめましょう</h1>
+    <div class="subtitle">— 自分の店舗のQRコードを読み取るだけで、アプリが開きます —</div>
+  </div>
+
+  <p class="qr-lead">
+    ここまで読んだら、下の<b>【自分の店舗】</b>のQRコードを、<b>スマホのカメラ</b>で読み取ってください。<br>
+    アプリが開いたら、このガイドの<b>手順①</b>からはじめます。
+  </p>
+
+  <div class="qrgrid">
+    <div class="qrcard">
+      <div class="st">本店</div>
+      <div class="qrslot" style="background-image:url('qr/gwh.png');">［本店のQRコード］<br>docs/qr/gwh.png</div>
+      <div class="cap">この店舗用の設定でアプリが開きます</div>
+    </div>
+    <div class="qrcard">
+      <div class="st">京都精華大学店</div>
+      <div class="qrslot" style="background-image:url('qr/gws.png');">［京都精華大学店のQRコード］<br>docs/qr/gws.png</div>
+      <div class="cap">この店舗用の設定でアプリが開きます</div>
+    </div>
+    <div class="qrcard">
+      <div class="st">京都美術工芸店</div>
+      <div class="qrslot" style="background-image:url('qr/gwk.png');">［京都美術工芸店のQRコード］<br>docs/qr/gwk.png</div>
+      <div class="cap">この店舗用の設定でアプリが開きます</div>
+    </div>
+    <div class="qrcard">
+      <div class="st">京都市立芸術大学店</div>
+      <div class="qrslot" style="background-image:url('qr/gwc.png');">［京都市立芸術大学店のQRコード］<br>docs/qr/gwc.png</div>
+      <div class="cap">この店舗用の設定でアプリが開きます</div>
+    </div>
+  </div>
+
+  <div class="qr-note">
+    <b>※ QRコードを読み取るのは、最初の1回だけでOKです。</b><br>
+    一度設定できたら、次回からはホーム画面の<b>アプリのアイコン</b>から開けます（QRコードは不要）。<br>
+    読み取ったあとは「初期設定が完了しました」と表示されます。そのまま手順①へ進んでください。
+    <div class="qr-caution">▲ このQRコードには店舗の設定情報が含まれます。店内での使用にとどめ、外部には共有しないでください。</div>
+  </div>
+
+  <div class="foot">画箋堂 棚卸アプリ 使い方ガイド ／ この用紙は各店舗で掲示・保管してください</div>
+</section>
+
+</body>
+</html>

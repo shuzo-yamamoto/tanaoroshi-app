@@ -24,9 +24,14 @@ tanaoroshi-app/
 │   └── app.js            画面遷移・業務ロジック
 ├── icons/                アプリアイコン
 ├── gas/Code.gs           提出受け口(スプレッドシート追記API)
+├── docs/操作ガイド.html   スタッフ向け操作ガイド(印刷用の元データ)
 ├── CLAUDE.md             実装AI向け絶対ルール
 └── README.md             本書
 ```
+
+**スタッフ向け操作ガイドあり**: `docs/操作ガイド.html`(A4・印刷用)。Chromeの「印刷→PDF」で配布用PDFにできる。
+末尾に店舗別QR(設定リンク)ページを用意しているが、**QR画像とQR入りPDFはトークンを含むため
+リポジトリに置かない**(`docs/qr/` と `docs/*.pdf` は `.gitignore` 済み。作り方は `docs/qr/README.md`)。
 
 ## GAS API(通信仕様)
 

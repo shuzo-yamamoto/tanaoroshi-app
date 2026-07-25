@@ -18,6 +18,13 @@ $RECYCLE.BIN/
 # ── Claude Code の端末ローカル設定（コミットしない） ──
 .claude/settings.local.json
 
+# ── 操作ガイドの印刷用成果物（QR＝提出トークンを含むため公開リポジトリに載せない） ──
+docs/qr/*.png
+docs/qr/*.jpg
+docs/qr/*.jpeg
+docs/qr/*.svg
+docs/*.pdf
+
 # ── 配布用アーカイブ・作業中の一時物 ──
 *.zip
 .writetest
