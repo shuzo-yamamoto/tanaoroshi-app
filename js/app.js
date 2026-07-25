@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 
 /** 商品マスタ同期の1回あたり取得件数(README設計判断#13) */
 const SYNC_PAGE_SIZE = 2000;
@@ -395,8 +395,8 @@ async function submitToWeb() {
 
   spinner(true, 'スプレッドシートへ送信中…');
   try {
-    const payload = {
-      token: conf.token || '',
+    // 通信は gasPost() に集約(エラー文言の統一・タイムアウト — 設計判断#15)
+    const data = await gasPost({
       action: 'submit',
       session: { name: session.name, id: session.id },
       staff: conf.staff || '',
@@ -406,20 +406,13 @@ async function submitToWeb() {
         jan: it.jan, name: it.name, cost: costOf(it), price: costOf(it), qty: it.qty,
         inMaster: it.inMaster, scannedAt: it.scannedAt
       }))
-    };
-    const res = await fetch(conf.gasUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // プリフライト回避
-      body: JSON.stringify(payload)
     });
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || '不明なエラー');
     await dbTouchSession(sessionId, { submittedAt: new Date().toISOString() });
-    toast(`提出しました(${json.data.rows}行を保存)。`);
+    toast(`提出しました(${data.rows}行を保存)。`);
     renderDataView();
   } catch (e) {
     console.error(e);
-    toast('提出に失敗しました：' + e.message + '(データは端末に残っています。設定と電波を確認して再送してください)', true, 6000);
+    toast('提出に失敗しました：' + e.message + '(データは端末に残っています。もう一度提出してください)', true, 6000);
   } finally {
     spinner(false);
   }
@@ -480,7 +473,10 @@ async function gasPost(payload, timeoutMs = SYNC_TIMEOUT_MS) {
     if (!json.success) throw new Error(json.error || '不明なエラー');
     return json.data;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('応答がありません(60秒)。電波と提出先URLを確認してください。');
+    // ブラウザ生の英語例外(Load failed / Failed to fetch など)は店頭スタッフに伝わらないため
+    // 日本語の対処つき文言へ言い換える(README設計判断#15)。呼び出し側で用途(提出/同期/接続)を補う
+    if (e.name === 'AbortError') throw new Error('応答がありません(60秒)。電波の良い場所でもう一度お試しください。');
+    if (e instanceof TypeError) throw new Error('通信できませんでした。電波の良い場所でもう一度お試しください。');
     throw e;
   } finally {
     clearTimeout(tm);
@@ -721,14 +717,8 @@ async function testConnection() {
   if (!conf.gasUrl) { toast('提出先URLを入力してから保存してください。', true); return; }
   spinner(true, '接続テスト中…');
   try {
-    const res = await fetch(conf.gasUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: conf.token || '', action: 'ping' })
-    });
-    const json = await res.json();
-    if (json.success) toast('接続OK：' + (json.data.message || '応答あり'));
-    else throw new Error(json.error || '不明なエラー');
+    const data = await gasPost({ action: 'ping' }); // 通信は gasPost() に集約(設計判断#15)
+    toast('接続OK：' + (data.message || '応答あり'));
   } catch (e) {
     toast('接続に失敗しました：' + e.message, true, 5000);
   } finally {
