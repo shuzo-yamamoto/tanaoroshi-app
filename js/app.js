@@ -11,19 +11,25 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 
 /**
- * 拠点(店舗)コード。提出時に gas/Code.gs が「棚卸データ_<コード>」へ振り分ける(設計判断#16)。
- * 表示名を出したい場合は値を書き換え、gas/Code.gs の LOCATIONS にも同じコードを足すこと。
+ * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
+ * label は画面表示名。表示名の変更は label だけを直せばよく、シート名・payload・設定リンクには影響しない。
+ * 拠点そのものを増減するときは gas/Code.gs の LOCATIONS にも同じ code を足すこと。
  */
 const LOCATIONS = [
-  { code: 'GWH', label: 'GWH' },
-  { code: 'GWS', label: 'GWS' },
-  { code: 'GWK', label: 'GWK' },
-  { code: 'GWC', label: 'GWC' }
+  { code: 'GWH', label: '本店' },
+  { code: 'GWS', label: '京都精華大学店' },
+  { code: 'GWK', label: '京都美術工芸店' },
+  { code: 'GWC', label: '京都市立芸術大学店' }
 ];
 const LOCATION_CODES = LOCATIONS.map(l => l.code);
+/** 拠点コード→表示名(未知のコードはそのまま返す) */
+function locationLabel(code) {
+  const l = LOCATIONS.find(x => x.code === code);
+  return l ? l.label : (code || '');
+}
 
 /** 商品マスタ同期の1回あたり取得件数(README設計判断#13) */
 const SYNC_PAGE_SIZE = 2000;
@@ -924,7 +930,7 @@ function init() {
   const setupLoc = applySetupLink();
   if (setupLoc !== null) {
     goto('settings');
-    toast(setupLoc ? `この端末の初期設定が完了しました（拠点: ${setupLoc}）。次に「商品情報」で同期してください。`
+    toast(setupLoc ? `この端末の初期設定が完了しました（拠点: ${locationLabel(setupLoc)}）。次に「商品情報」で同期してください。`
                    : 'この端末の初期設定が完了しました。設定内容をご確認ください。', false, 5000);
   } else {
     goto('home');
