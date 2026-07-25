@@ -107,6 +107,17 @@ body{
 /* .btn-primary 等（詳細度0,1,0）より :disabled 付き（0,2,0）が強いので確実に上書きされる */
 .big-btn:disabled{background:#C9C9C9; color:#fff; box-shadow:none; cursor:not-allowed;}
 .big-btn:disabled:active{transform:none;}
+
+/* 配布用の設定リンク（README設計判断#17） */
+.setup-box{background:#fff; border:2px solid var(--line); border-radius:var(--radius); padding:14px; margin:12px 0;}
+.setup-link-row{margin:12px 0;}
+.setup-link-row .loc{font-weight:700; margin-bottom:4px;}
+.setup-link-row .link{
+  display:block; width:100%; box-sizing:border-box; font-family:monospace; font-size:12px;
+  padding:8px; border:1px solid var(--line); border-radius:8px; background:#F7F5EF;
+  word-break:break-all; -webkit-user-select:all; user-select:all;
+}
+.setup-link-row .copied{color:var(--wakaba); font-weight:700; font-size:12px; margin-left:8px;}
 .empty-msg{text-align:center; color:#888; padding:32px 8px; font-size:15px;}
 
 /* ── リスト ── */

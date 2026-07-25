@@ -11,7 +11,19 @@
  */
 'use strict';
 
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.3.0';
+
+/**
+ * 拠点(店舗)コード。提出時に gas/Code.gs が「棚卸データ_<コード>」へ振り分ける(設計判断#16)。
+ * 表示名を出したい場合は値を書き換え、gas/Code.gs の LOCATIONS にも同じコードを足すこと。
+ */
+const LOCATIONS = [
+  { code: 'GWH', label: 'GWH' },
+  { code: 'GWS', label: 'GWS' },
+  { code: 'GWK', label: 'GWK' },
+  { code: 'GWC', label: 'GWC' }
+];
+const LOCATION_CODES = LOCATIONS.map(l => l.code);
 
 /** 商品マスタ同期の1回あたり取得件数(README設計判断#13) */
 const SYNC_PAGE_SIZE = 2000;
@@ -385,6 +397,11 @@ async function submitToWeb() {
     goto('settings');
     return;
   }
+  if (!conf.location) {
+    toast('先に「設定」タブで拠点を選んでください。', true, 4000);
+    goto('settings');
+    return;
+  }
   if (!navigator.onLine) { toast('オフラインです。電波のある場所で提出してください(データは端末に保存されています)。', true, 4500); return; }
 
   const sessionId = $('#data-session-sel').value;
@@ -400,6 +417,7 @@ async function submitToWeb() {
       action: 'submit',
       session: { name: session.name, id: session.id },
       staff: conf.staff || '',
+      location: conf.location || '', // 拠点別シートへ振り分け(設計判断#16)
       // cost と price の両方を送る。gas/Code.gs を再デプロイしていない提出先でも
       // 金額が欠落しないようにするための互換措置(README設計判断#9)
       items: [...items].reverse().map(it => ({
@@ -698,18 +716,98 @@ async function addProductManually() {
 function renderSettings() {
   const conf = Settings.load();
   $('#set-staff').value = conf.staff || '';
+  fillLocationSelect($('#set-location'), conf.location || '');
   $('#set-gas').value = conf.gasUrl || '';
   $('#set-token').value = conf.token || '';
   $('#app-version').textContent = APP_VERSION;
+  // 生成済みリンクは設定変更で古くなるため、開き直すたびに畳む
+  $('#setup-link-box').hidden = true;
+}
+
+/** 拠点セレクトを組み立てる(先頭は未選択) */
+function fillLocationSelect(sel, current) {
+  sel.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = ''; none.textContent = '（選択してください）';
+  sel.appendChild(none);
+  for (const l of LOCATIONS) {
+    const op = document.createElement('option');
+    op.value = l.code; op.textContent = l.label;
+    sel.appendChild(op);
+  }
+  sel.value = LOCATION_CODES.includes(current) ? current : '';
 }
 
 function saveSettings() {
   const conf = Settings.load();
   conf.staff = $('#set-staff').value.trim();
+  conf.location = $('#set-location').value;
   conf.gasUrl = $('#set-gas').value.trim();
   conf.token = $('#set-token').value.trim();
   Settings.save(conf);
   toast('設定を保存しました。');
+}
+
+/* ── 配布用の設定リンク(設計判断#17) ── */
+
+/** 現在の設定(URL・トークン・拠点)を埋めた設定リンクを生成する */
+function buildSetupLink(loc) {
+  const conf = Settings.load();
+  // トークンは # (フラグメント)に載せる。? に載せるとサーバーログに残るため(設計判断#17)
+  const params = new URLSearchParams({ setup: '1', gasUrl: conf.gasUrl || '', token: conf.token || '', loc });
+  return location.origin + location.pathname + '#' + params.toString();
+}
+
+function renderSetupLinks() {
+  const conf = Settings.load();
+  const box = $('#setup-link-box');
+  if (!conf.gasUrl || !conf.token) {
+    toast('先に提出先URLとトークンを入力して保存してください。', true, 4000);
+    return;
+  }
+  const list = $('#setup-link-list');
+  list.innerHTML = '';
+  for (const l of LOCATIONS) {
+    const url = buildSetupLink(l.code);
+    const row = document.createElement('div');
+    row.className = 'setup-link-row';
+    row.innerHTML = `
+      <div class="loc"></div>
+      <input class="link" type="text" readonly>
+      <button class="big-btn btn-ghost" type="button">この${l.label}のリンクをコピー</button>`;
+    row.querySelector('.loc').textContent = l.label;
+    const input = row.querySelector('.link');
+    input.value = url;
+    row.querySelector('button').addEventListener('click', async () => {
+      input.focus(); input.select();
+      let ok = false;
+      try { await navigator.clipboard.writeText(url); ok = true; }
+      catch (e) { try { ok = document.execCommand('copy'); } catch (e2) { ok = false; } }
+      toast(ok ? `${l.label}のリンクをコピーしました。` : 'コピーできませんでした。長押しで選択してください。', !ok, 2200);
+    });
+    list.appendChild(row);
+  }
+  box.hidden = false;
+}
+
+/**
+ * 起動時、設定リンク(#setup=1&…)で開かれていたら設定を自動入力する(設計判断#17)。
+ * 適用後はフラグメントを消し、トークンをアドレスバー・履歴・ブックマークに残さない。
+ * @returns 適用した拠点コード(未適用なら null)
+ */
+function applySetupLink() {
+  if (!location.hash) return null;
+  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (p.get('setup') !== '1') return null;
+  const conf = Settings.load();
+  if (p.get('gasUrl')) conf.gasUrl = p.get('gasUrl');
+  if (p.get('token')) conf.token = p.get('token');
+  const loc = p.get('loc');
+  if (loc && LOCATION_CODES.includes(loc)) conf.location = loc;
+  Settings.save(conf);
+  // フラグメント除去(トークンを残さない)。search は保持
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  return conf.location || '';
 }
 
 async function testConnection() {
@@ -820,8 +918,17 @@ function init() {
   // 設定
   $('#btn-set-save').addEventListener('click', saveSettings);
   $('#btn-set-test').addEventListener('click', testConnection);
+  $('#btn-setup-links').addEventListener('click', renderSetupLinks);
 
-  goto('home');
+  // 設定リンク(#setup=…)で開かれていたら初期設定を自動入力してから設定画面へ
+  const setupLoc = applySetupLink();
+  if (setupLoc !== null) {
+    goto('settings');
+    toast(setupLoc ? `この端末の初期設定が完了しました（拠点: ${setupLoc}）。次に「商品情報」で同期してください。`
+                   : 'この端末の初期設定が完了しました。設定内容をご確認ください。', false, 5000);
+  } else {
+    goto('home');
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -15,6 +15,9 @@ $RECYCLE.BIN/
 *.swp
 *~
 
+# ── Claude Code の端末ローカル設定（コミットしない） ──
+.claude/settings.local.json
+
 # ── 配布用アーカイブ・作業中の一時物 ──
 *.zip
 .writetest

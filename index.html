@@ -198,12 +198,23 @@
 <section id="view-settings" class="view" hidden>
   <label class="field-label" for="set-staff">担当者名（提出データに記録されます）</label>
   <input id="set-staff" class="big-input" type="text" placeholder="山本">
+  <label class="field-label" for="set-location">拠点（提出先の店舗）</label>
+  <select id="set-location" class="big-select"></select>
   <label class="field-label" for="set-gas">提出先URL（GAS WebアプリのURL）</label>
   <input id="set-gas" class="big-input mono small" type="url" placeholder="https://script.google.com/macros/s/…/exec">
   <label class="field-label" for="set-token">提出用トークン</label>
   <input id="set-token" class="big-input mono" type="text" placeholder="設定シートと同じ値">
   <button id="btn-set-save" class="big-btn btn-primary">設定を保存する</button>
   <button id="btn-set-test" class="big-btn btn-ghost">接続テスト</button>
+
+  <!-- 配布用の設定リンク（管理者が複数端末を設定するとき） -->
+  <div id="setup-link-box" class="setup-box" hidden>
+    <p class="field-label">配布用の設定リンクを作る</p>
+    <p class="hint">先に提出先URL・トークンを保存してください。拠点ごとのリンクを各端末で開くと、URL・トークン・拠点が自動で入ります。<strong>トークンを含むので社内限りで扱ってください。</strong></p>
+    <div id="setup-link-list"></div>
+  </div>
+  <button id="btn-setup-links" class="big-btn btn-ghost">🔗 配布用の設定リンクを作る</button>
+
   <p class="hint">アプリのバージョン: <span id="app-version"></span></p>
 </section>
 

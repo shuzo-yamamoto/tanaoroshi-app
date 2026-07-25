@@ -29,6 +29,12 @@ var SHEET_SETTINGS = 'settings';
 var SHEET_LOG = 'opsLog';
 var SHEET_PRODUCTS = '商品マスタ';
 
+// 拠点コードの許可リスト(README設計判断#16)。提出はこのシートに振り分ける:
+//   GWH → 棚卸データ_GWH  … のように SHEET_DATA + '_' + 拠点。
+// リスト外のコードは提出を弾く(不正な値でシートを乱造させないため)。
+// 拠点を増やすときは app.js の LOCATIONS にも同じコードを足すこと。
+var LOCATIONS = ['GWH', 'GWS', 'GWK', 'GWC'];
+
 // 商品マスタの列は「1行目の見出し名」で探す(README設計判断#12)。
 // スマレジCSVをそのままインポートしても、出力列が増減しても壊れないようにするため。
 var HEADERS_JAN = ['商品コード', 'JAN', 'jan', 'バーコード'];
@@ -79,15 +85,14 @@ function submit_(body) {
   }
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(SHEET_DATA);
-    if (!sheet) {
-      sheet = ss.insertSheet(SHEET_DATA);
-      sheet.getRange(1, 1, 1, HEADER.length).setValues([HEADER]).setFontWeight('bold');
-      // JAN列(E)・棚卸ID列(C)は日付誤変換を防ぐためプレーンテキスト書式(標準§4-1)
-      sheet.getRange('C:C').setNumberFormat('@');
-      sheet.getRange('E:E').setNumberFormat('@');
-      sheet.getRange('J:J').setNumberFormat('@');
+
+    // 拠点別シートへ振り分け(README設計判断#16)。未指定は従来の SHEET_DATA(後方互換)
+    var loc = String(body.location || '').trim();
+    if (loc && LOCATIONS.indexOf(loc) < 0) {
+      return { success: false, error: '不明な拠点コードです: ' + loc + '(設定タブの拠点を確認してください)' };
     }
+    var sheetName = loc ? (SHEET_DATA + '_' + loc) : SHEET_DATA;
+    var sheet = ensureDataSheet_(ss, sheetName);
 
     var now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
     var items = body.items || [];
@@ -113,13 +118,30 @@ function submit_(body) {
     // 一括書き込みのみ(セル単位set禁止 — 標準§3.2)
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, HEADER.length).setValues(rows);
 
-    appendLog_('submit', (body.staff || '不明') + ' が「' + (body.session && body.session.name) + '」を提出(' + rows.length + '行)');
-    return { success: true, data: { rows: rows.length } };
+    appendLog_('submit', (body.staff || '不明') + ' が「' + (body.session && body.session.name) +
+      '」を' + (loc ? '[' + loc + ']' : '') + '提出(' + rows.length + '行)');
+    return { success: true, data: { rows: rows.length, sheet: sheetName } };
   } catch (err) {
     return { success: false, error: '保存に失敗しました: ' + err.message };
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 棚卸データシートを取得。無ければ見出し・書式つきで作成する(README設計判断#16)。
+ * JAN列(E)・棚卸ID列(C)・読取日時列(J)は日付誤変換を防ぐためプレーンテキスト書式(標準§4-1)。
+ */
+function ensureDataSheet_(ss, name) {
+  var sheet = ss.getSheetByName(name);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(name);
+  sheet.getRange(1, 1, 1, HEADER.length).setValues([HEADER]).setFontWeight('bold');
+  sheet.getRange('C:C').setNumberFormat('@');
+  sheet.getRange('E:E').setNumberFormat('@');
+  sheet.getRange('J:J').setNumberFormat('@');
+  sheet.setFrozenRows(1);
+  return sheet;
 }
 
 /* ═══════════ 商品マスタ同期(getProducts) ═══════════ */
