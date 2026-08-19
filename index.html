@@ -143,12 +143,16 @@
     <select id="data-session-sel" class="big-select"></select>
   </div>
   <div id="data-summary" class="data-summary"></div>
-  <ul id="item-list" class="card-list"></ul>
-  <p id="item-empty" class="empty-msg" hidden>まだ商品が登録されていません。</p>
+  <!-- 主要3ボタンは明細一覧の上に配置（多件数時に毎回下までスクロールしなくて済むように。設計判断#18） -->
   <div class="stack data-actions">
     <button id="btn-resume-scan" class="big-btn btn-secondary">📷 この棚卸の続きをスキャンする</button>
     <button id="btn-submit" class="big-btn btn-success">☁️ Webへ提出（スプレッドシート保存）</button>
     <button id="btn-csv" class="big-btn btn-warning">📄 CSV出力（ダウンロード）</button>
+  </div>
+  <ul id="item-list" class="card-list"></ul>
+  <p id="item-empty" class="empty-msg" hidden>まだ商品が登録されていません。</p>
+  <!-- 削除は破壊的操作のため、誤タップを避けて一覧の下に据え置き -->
+  <div class="stack">
     <button id="btn-del-session" class="big-btn btn-ghost danger-text">この棚卸データを削除する</button>
   </div>
 </section>
