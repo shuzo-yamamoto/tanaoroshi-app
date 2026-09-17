@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.3';
+const APP_VERSION = '1.3.4';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -168,8 +168,28 @@ async function goto(view) {
 /* ═══════════ 棚卸フロー ═══════════ */
 
 let currentSession = null;   // {id, name, ...}
-let pendingCode = null;      // 確認画面で扱っているJAN
 let pendingProduct = null;   // マスタヒットした商品(なければnull)
+let pendingJan = null;       // 明細に記録するJAN(マスタ登録済みならマスタ側の表記)
+
+/**
+ * 明細に記録・出力するJAN(README設計判断#20)。
+ * マスタ登録済みの商品はマスタ側の表記にそろえ、スキャンと手入力で集計が分かれないようにする。
+ * normalizeMasterJan を通すのは、再同期前の端末でマスタに0落ちのコードが残っていても正しい表記にするため。
+ * 未登録品は読み取った(入力した)値のまま。
+ */
+function recordJanFor(code, product) {
+  return product ? normalizeMasterJan(product.jan) : code;
+}
+
+/**
+ * 保存済み明細を提出・CSV出力するときのJAN。v1.3.3以前に読んだ値のまま登録された明細もそろえる。
+ * 端末内の明細データは書き換えない。登録時に未登録品だった明細は変えない。
+ */
+async function recordJanOf(item) {
+  if (!item.inMaster) return item.jan;
+  const p = await dbGetProduct(item.jan);
+  return p ? recordJanFor(item.jan, p) : item.jan;
+}
 
 // ── 新規作成 ──
 async function createSession() {
@@ -241,14 +261,15 @@ function onCodeDetected(code) {
 // ── 商品確認・数量入力 ──
 async function openConfirm(code) {
   await Scanner.stop();
-  pendingCode = code;
   pendingProduct = await dbGetProduct(code);
+  pendingJan = recordJanFor(code, pendingProduct);
 
   const card = $('#confirm-card');
   const status = $('#confirm-status');
   const newNameInput = $('#confirm-newname');
 
-  $('#confirm-jan').textContent = code;
+  // 画面にも「記録される値」を出す
+  $('#confirm-jan').textContent = pendingJan;
   if (pendingProduct) {
     card.classList.remove('unknown');
     status.textContent = '✓ 商品マスタに登録済み';
@@ -267,8 +288,8 @@ async function openConfirm(code) {
     newNameInput.value = '';
   }
 
-  // 同一セッション内で既にスキャン済みなら注意表示
-  const dup = await dbFindItemsByJan(currentSession.id, code);
+  // 同一セッション内で既にスキャン済みなら注意表示(記録する値で判定し、先頭0の違いは合算する)
+  const dup = await dbFindItemsByJan(currentSession.id, pendingJan);
   const note = $('#confirm-dup-note');
   if (dup.length > 0) {
     const sum = dup.reduce((a, b) => a + Number(b.qty || 0), 0);
@@ -288,14 +309,14 @@ async function registerItem() {
   const name = pendingProduct ? pendingProduct.name : ($('#confirm-newname').value.trim() || '');
   await dbAddItem({
     sessionId: currentSession.id,
-    jan: pendingCode,
+    jan: pendingJan,
     name: name,
     cost: pendingProduct ? costOf(pendingProduct) : '',
     inMaster: !!pendingProduct,
     qty: qty,
     scannedAt: new Date().toISOString()
   });
-  toast(`登録しました：${name || pendingCode} × ${qty}`);
+  toast(`登録しました：${name || pendingJan} × ${qty}`);
   goto('scan'); // 自動でカメラへ戻る
 }
 
@@ -381,9 +402,9 @@ async function exportCsv() {
 
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = [['棚卸名', 'JANコード', '商品名', '原価', '数量', '読取日時']];
-  // 古い順に出力
+  // 古い順に出力。JANはマスタ側の表記にそろえる(設計判断#20)
   for (const it of [...items].reverse()) {
-    rows.push([session.name, it.jan, it.name, costOf(it), it.qty, fmtDate(it.scannedAt)]);
+    rows.push([session.name, await recordJanOf(it), it.name, costOf(it), it.qty, fmtDate(it.scannedAt)]);
   }
   const csv = '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -418,18 +439,23 @@ async function submitToWeb() {
 
   spinner(true, 'スプレッドシートへ送信中…');
   try {
+    // JANはマスタ側の表記にそろえてから送る(設計判断#20)
+    const payloadItems = [];
+    for (const it of [...items].reverse()) {
+      // cost と price の両方を送る。gas/Code.gs を再デプロイしていない提出先でも
+      // 金額が欠落しないようにするための互換措置(README設計判断#9)
+      payloadItems.push({
+        jan: await recordJanOf(it), name: it.name, cost: costOf(it), price: costOf(it), qty: it.qty,
+        inMaster: it.inMaster, scannedAt: it.scannedAt
+      });
+    }
     // 通信は gasPost() に集約(エラー文言の統一・タイムアウト — 設計判断#15)
     const data = await gasPost({
       action: 'submit',
       session: { name: session.name, id: session.id },
       staff: conf.staff || '',
       location: conf.location || '', // 拠点別シートへ振り分け(設計判断#16)
-      // cost と price の両方を送る。gas/Code.gs を再デプロイしていない提出先でも
-      // 金額が欠落しないようにするための互換措置(README設計判断#9)
-      items: [...items].reverse().map(it => ({
-        jan: it.jan, name: it.name, cost: costOf(it), price: costOf(it), qty: it.qty,
-        inMaster: it.inMaster, scannedAt: it.scannedAt
-      }))
+      items: payloadItems
     });
     await dbTouchSession(sessionId, { submittedAt: new Date().toISOString() });
     toast(`提出しました(${data.rows}行を保存)。`);

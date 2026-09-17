@@ -267,9 +267,16 @@ async function dbListItems(sessionId) {
   return all.sort((a, b) => b.scannedAt.localeCompare(a.scannedAt)); // 新しい順
 }
 
-/** 同一セッション内の同一JANの既存明細を取得(重複スキャンの確認用) */
+/**
+ * 同一セッション内の同じ商品の既存明細を取得(重複スキャンの確認用)。
+ * 先頭0だけが違うJANで登録された明細も同じ商品として含める(README設計判断#20)。
+ */
 async function dbFindItemsByJan(sessionId, jan) {
   const db = await dbOpen();
   const idx = db.transaction('items').objectStore('items').index('bySessionJan');
-  return _reqToPromise(idx.getAll([sessionId, jan]));
+  const keys = [...new Set([jan, ...janZeroVariants(jan)])];
+  // 要求は同じ tick でまとめて発行する(dbGetProduct と同じ理由)
+  const lists = await Promise.all(keys.map(k => _reqToPromise(idx.getAll([sessionId, k]))));
+  const seen = new Set();
+  return lists.flat().filter(it => !seen.has(it.id) && seen.add(it.id));
 }
