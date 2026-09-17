@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.3.3';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -523,11 +523,16 @@ async function syncProducts() {
   try {
     // 全ページを取得し終えてから置き換える。途中で切れても既存マスタを壊さない(設計判断#13)
     const all = [];
-    let offset = 0, total = 0;
+    let offset = 0, total = 0, fixed = 0;
     for (;;) {
       const data = await gasPost({ action: 'getProducts', offset, limit: SYNC_PAGE_SIZE });
       total = Number(data.total) || 0;
-      for (const it of data.items) all.push(it);
+      for (const it of data.items) {
+        // シート側で先頭0が落ちたJANを補正してから保存する(設計判断#19)
+        const jan = normalizeMasterJan(it.jan);
+        if (jan !== it.jan) fixed++;
+        all.push({ ...it, jan });
+      }
       offset += Number(data.count) || 0;
       spinner(true, `商品マスタを同期中… ${offset.toLocaleString('ja-JP')} / ${total.toLocaleString('ja-JP')}件`);
       if (!data.count || offset >= total) break;
@@ -545,7 +550,11 @@ async function syncProducts() {
     Settings.save(c);
 
     const skipped = total - all.length;
-    toast(`${all.length.toLocaleString('ja-JP')}件を同期しました${skipped > 0 ? `(JAN不正 ${skipped.toLocaleString('ja-JP')}行はスキップ)` : ''}。`, false, 4000);
+    const notes = [];
+    if (skipped > 0) notes.push(`JAN不正 ${skipped.toLocaleString('ja-JP')}行はスキップ`);
+    // 補正件数を出すのは、スプレッドシート側で0落ちが起きていることに管理者が気づけるようにするため
+    if (fixed > 0) notes.push(`先頭の0が欠けたJAN ${fixed.toLocaleString('ja-JP')}件を補正`);
+    toast(`${all.length.toLocaleString('ja-JP')}件を同期しました${notes.length ? `(${notes.join('・')})` : ''}。`, false, fixed > 0 ? 6000 : 4000);
     renderProducts();
   } catch (e) {
     console.error(e);
@@ -667,10 +676,13 @@ async function importCsv() {
   spinner(true, '商品マスタを取り込み中…');
   try {
     const list = [];
-    let skipped = 0;
+    let skipped = 0, fixed = 0;
     for (const r of csvParsed.rows) {
-      const jan = String(r[janIdx] ?? '').trim();
-      if (!/^\d{4,14}$/.test(jan)) { skipped++; continue; } // JANとして不正な行はスキップ
+      const raw = String(r[janIdx] ?? '').trim();
+      if (!/^\d{4,14}$/.test(raw)) { skipped++; continue; } // JANとして不正な行はスキップ
+      // Excelで開いて保存したCSVは先頭0が落ちていることがあるため補正する(設計判断#19)
+      const jan = normalizeMasterJan(raw);
+      if (jan !== raw) fixed++;
       list.push({
         jan: jan,
         name: String(r[nameIdx] ?? '').trim(),
@@ -683,7 +695,10 @@ async function importCsv() {
     conf.masterUpdatedAt = new Date().toISOString();
     conf.masterSource = 'csv';
     Settings.save(conf);
-    toast(`${list.length.toLocaleString('ja-JP')}件を取り込みました${skipped ? `(JAN不正 ${skipped}行はスキップ)` : ''}。`);
+    const notes = [];
+    if (skipped) notes.push(`JAN不正 ${skipped}行はスキップ`);
+    if (fixed) notes.push(`先頭の0が欠けたJAN ${fixed}件を補正`);
+    toast(`${list.length.toLocaleString('ja-JP')}件を取り込みました${notes.length ? `(${notes.join('・')})` : ''}。`, false, fixed ? 6000 : 2600);
     csvParsed = null;
     goto('products');
   } catch (e) {
@@ -710,10 +725,12 @@ async function addProductManually() {
   if (!jan) { toast('JANコードを入力してください。', true); return; }
   if (!/^\d{4,14}$/.test(jan)) { toast('JANコードは数字で入力してください(通常13桁)。', true); return; }
   if (!name) { toast('商品名を入力してください。', true); return; }
-  await dbPutProducts([{ jan, name, cost }]);
+  // UPCの印字(12桁)をそのまま打った場合もスキャン値(先頭0付き13桁)にそろえる(設計判断#19)
+  const key = normalizeMasterJan(jan);
+  await dbPutProducts([{ jan: key, name, cost }]);
   $('#padd-jan').value = ''; $('#padd-name').value = ''; $('#padd-cost').value = '';
   updatePaddButton();
-  toast(`登録しました：${name}`);
+  toast(key !== jan ? `登録しました：${name}（JANを ${key} に補正）` : `登録しました：${name}`);
   goto('products');
 }
 

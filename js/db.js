@@ -64,6 +64,48 @@ function _reqToPromise(req) {
   });
 }
 
+/* ───────── JANの先頭0の揺れ(README設計判断#19・不具合ログ#3) ─────────
+ * スプレッドシート/Excelを経由するとJANが数値化され、先頭の0が落ちることがある。
+ * GS1規格では GTIN-8/12/13/14 は「左に0を詰めて14桁にした形で一意」なので、
+ * 先頭0だけが違うコードは同一商品とみなしてよい。
+ */
+
+/** GS1のチェックデジット(末尾1桁)が正しいか。先頭に0を足しても結果は変わらない */
+function gs1CheckDigitOk(code) {
+  const s = String(code || '');
+  if (!/^\d{2,}$/.test(s)) return false;
+  let sum = 0;
+  // チェックデジットの左隣から左へ、重み 3,1,3,1… を掛けて合計する
+  for (let i = s.length - 2, w = 3; i >= 0; i--, w = 4 - w) sum += Number(s[i]) * w;
+  return (10 - (sum % 10)) % 10 === Number(s[s.length - 1]);
+}
+
+/**
+ * マスタ取込時の正規化。9〜12桁でチェックデジットが正しいコードは、先頭0が落ちた
+ * EAN-13(UPC-Aを含む)とみなして13桁に0詰めする。スキャナ(EAN_13)の読取値とそろえるため。
+ * 8桁・13桁・14桁と7桁以下は変えない(短い店内コードを誤って書き換えないため)。
+ */
+function normalizeMasterJan(code) {
+  const s = String(code == null ? '' : code).trim();
+  if (/^\d{9,12}$/.test(s) && gs1CheckDigitOk(s)) return s.padStart(13, '0');
+  return s;
+}
+
+/**
+ * 照合用の候補キー。先頭0を外した核に0を足した形を14桁まで並べる。
+ * よく使う桁数(13→8→12→14)を先に置き、同じ商品が複数形で入っていても標準形を優先する。
+ */
+function janZeroVariants(code) {
+  const s = String(code == null ? '' : code).trim();
+  if (!/^\d+$/.test(s)) return [];
+  const core = s.replace(/^0+/, '');
+  if (!core || core.length > 14) return [];
+  const out = [];
+  for (let len = core.length; len <= 14; len++) out.push(core.padStart(len, '0'));
+  const rank = (k) => { const i = [13, 8, 12, 14].indexOf(k.length); return i < 0 ? 4 : i; };
+  return out.sort((a, b) => rank(a) - rank(b) || a.length - b.length);
+}
+
 /* ───────── 商品マスタ ───────── */
 
 /** 商品マスタを一括登録(CSV取込)。既存JANは上書き */
@@ -98,11 +140,22 @@ async function dbReplaceProducts(list) {
   });
 }
 
-/** JANで商品1件取得(なければnull) */
+/**
+ * JANで商品1件取得(なければnull)。
+ * 完全一致を優先し、無いときだけ先頭0の有無が違うキーを探す(README設計判断#19)。
+ */
 async function dbGetProduct(jan) {
   const db = await dbOpen();
+  const exact = await _reqToPromise(db.transaction('products').objectStore('products').get(jan));
+  if (exact) return exact;
+
+  const keys = janZeroVariants(jan).filter(k => k !== jan);
+  if (keys.length === 0) return null;
+  // 要求は同じ tick でまとめて発行する。1件ずつ await すると、iOS Safari では
+  // その間にトランザクションが閉じて後続の get が失敗することがあるため
   const st = db.transaction('products').objectStore('products');
-  return (await _reqToPromise(st.get(jan))) || null;
+  const results = await Promise.all(keys.map(k => _reqToPromise(st.get(k))));
+  return results.find(Boolean) || null;
 }
 
 /** 商品マスタ件数 */
