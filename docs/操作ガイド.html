@@ -111,6 +111,17 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
 /* トースト */
 .toast{ background:var(--sumi); color:#fff; border-radius:8px; padding:7px 9px; font-size:8pt; text-align:center; margin-top:7px; }
 
+/* 未登録品の売価・税率・下代(手順8) */
+.npm{ margin-top:6px; padding-top:5px; border-top:1px dashed var(--line); }
+.npm-l{ font-weight:bold; font-size:7.4pt; margin:3px 0 2px; }
+.npm-row{ display:flex; align-items:center; gap:6px; }
+.npm-row .inp{ flex:1; padding:4px 6px; }
+.npm-ex{ font-weight:bold; font-size:7.2pt; color:var(--ai); white-space:nowrap; }
+.npm-tax{ display:flex; align-items:center; gap:4px; margin:4px 0 1px; }
+.npm-tax .npm-l{ margin:0 2px 0 0; }
+.npm-pill{ font-size:7.2pt; font-weight:bold; border:1.5px solid var(--line); border-radius:9px; padding:1px 7px; background:#fff; }
+.npm-pill.on{ background:var(--ai); border-color:var(--ai); color:#fff; }
+
 /* ── 強調（赤リング＋矢印。白黒でも太い輪郭と矢印形で判別可） ── */
 /* 白フチ＋朱リング。赤いボタンの上でも輪郭が見え、白黒印刷でも太い輪として読める */
 .hi{ box-shadow:0 0 0 2px #fff, 0 0 0 4.5px var(--shu); border-radius:9px; position:relative; }
@@ -316,8 +327,8 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
   <div class="step">
     <div class="num">8</div>
     <div class="txt">
-      <b>一覧にない商品の場合は、「マスタに見つかりません」と表示され、商品名を入力する欄が出てきます。</b>
-      <span class="note">商品名を入力して登録してください。</span>
+      <b>一覧にない商品の場合は、「マスタに見つかりません」と表示され、商品名・売価・下代を入力する欄が出てきます。</b>
+      <span class="note">分かる項目だけ入力して登録してください（全部空欄でも登録できます）。売価・下代は<b>値札の税込価格をそのまま</b>入力します。軽減税率の商品だけ「8%」を押します。</span>
     </div>
     <div class="shot">
       <div class="m">
@@ -325,7 +336,14 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
         <div class="body">
           <div class="card"><div class="ng">⚠ 商品マスタに見つかりません</div>
             <div class="meta">JAN: 4909999999999</div>
-            <div class="inp hi" style="margin-top:5px;">商品名（分かれば入力）</div></div>
+            <div class="inp hi" style="margin-top:5px;">商品名（分かれば入力）</div>
+            <div class="npm">
+              <div class="npm-l">売価（税込）</div>
+              <div class="npm-row"><span class="inp hi">1100</span><span class="npm-ex">税抜 1,000円</span></div>
+              <div class="npm-tax"><span class="npm-l">税率</span><span class="npm-pill on">10%</span><span class="npm-pill">8%</span></div>
+              <div class="npm-l">下代（税込）</div>
+              <div class="npm-row"><span class="inp hi">770</span><span class="npm-ex">税抜 700円</span></div>
+            </div></div>
           <div class="btn b-shu">登録して次をスキャン</div>
         </div>
       </div>

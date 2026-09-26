@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.5';
+const APP_VERSION = '1.4.0';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -181,6 +181,73 @@ function recordJanFor(code, product) {
   return product ? normalizeMasterJan(product.jan) : code;
 }
 
+/* ── 未登録品の売価・税率・下代(README設計判断#21) ── */
+
+/** 売価・下代を入力した明細を提出するのに必要なGASの版(設計判断#23) */
+const API_VERSION_FOR_PRICE = 2;
+
+/**
+ * 金額の入力を整数(円)にする。空欄は ''、数字として読めなければ NaN。
+ * 全角数字・カンマ・円記号・空白は受け付けて除去する(IMEの状態に左右されないように)。
+ */
+function parseYen(s) {
+  const t = String(s == null ? '' : s)
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[¥￥,，\s円]/g, '');
+  if (t === '') return '';
+  return /^\d{1,9}$/.test(t) ? Number(t) : NaN;
+}
+
+/**
+ * 税込(円)→税抜(円)。1円未満は四捨五入。
+ * round(税込×100 ÷ d) を整数だけで計算する(d = 100+税率)。浮動小数点誤差を避けるため(標準§4-2)
+ */
+function taxExcluded(incl, ratePct) {
+  const d = 100 + ratePct;
+  return Math.floor((200 * incl + d) / (2 * d));
+}
+
+function selectedTaxRate() {
+  const el = document.querySelector('input[name="np-tax"]:checked');
+  return el ? Number(el.value) : 10;
+}
+
+/** 入力欄の横に換算後の税抜額を出す */
+function updateNewPriceHints() {
+  const rate = selectedTaxRate();
+  for (const [inputSel, outSel] of [['#np-sell', '#np-sell-ex'], ['#np-cost', '#np-cost-ex']]) {
+    const v = parseYen($(inputSel).value);
+    const out = $(outSel);
+    out.classList.toggle('bad', Number.isNaN(v));
+    out.textContent = v === '' ? '' : Number.isNaN(v) ? '数字で入力' : `税抜 ${taxExcluded(v, rate).toLocaleString('ja-JP')}円`;
+  }
+}
+
+/**
+ * 未登録品の登録画面の入力から、明細に保存する値を作る。
+ * 売価・下代とも空欄なら税率も記録しない。数字として読めない入力があれば null(登録を止める)。
+ * @returns {{cost:string, sellEx:string, taxRate:string, sellIn:string, costIn:string} | null}
+ */
+function readNewPriceInputs() {
+  const sell = parseYen($('#np-sell').value);
+  const gedai = parseYen($('#np-cost').value);
+  if (Number.isNaN(sell) || Number.isNaN(gedai)) return null;
+  const out = { cost: '', sellEx: '', taxRate: '', sellIn: '', costIn: '' };
+  if (sell === '' && gedai === '') return out;
+  const rate = selectedTaxRate();
+  out.taxRate = String(rate);
+  if (sell !== '') { out.sellIn = String(sell); out.sellEx = String(taxExcluded(sell, rate)); }
+  // 下代(税抜)は既存の「原価」に入れる(マスタの原価＝下代)
+  if (gedai !== '') { out.costIn = String(gedai); out.cost = String(taxExcluded(gedai, rate)); }
+  return out;
+}
+
+/** 保存済み明細の売価等(v1.3.x以前の明細はキーが無いので空欄) */
+function priceExtOf(it) {
+  const s = (v) => (v === undefined || v === null ? '' : String(v));
+  return { sellEx: s(it.sellEx), taxRate: s(it.taxRate), sellIn: s(it.sellIn), costIn: s(it.costIn) };
+}
+
 /**
  * 保存済み明細を提出・CSV出力するときのJAN。v1.3.3以前に読んだ値のまま登録された明細もそろえる。
  * 端末内の明細データは書き換えない。登録時に未登録品だった明細は変えない。
@@ -278,6 +345,7 @@ async function openConfirm(code) {
     const c = costOf(pendingProduct);
     $('#confirm-cost').textContent = c === '' ? '' : '原価 ' + fmtPrice(c);
     newNameInput.hidden = true;
+    $('#confirm-newprice').hidden = true;
   } else {
     card.classList.add('unknown');
     status.textContent = '⚠ 商品マスタに見つかりません(このまま登録できます)';
@@ -286,6 +354,12 @@ async function openConfirm(code) {
     $('#confirm-cost').textContent = '';
     newNameInput.hidden = false;
     newNameInput.value = '';
+    // 売価・税率・下代は商品ごとに入力し直す(税率の初期値は10%)
+    $('#np-sell').value = '';
+    $('#np-cost').value = '';
+    document.querySelector('input[name="np-tax"][value="10"]').checked = true;
+    updateNewPriceHints();
+    $('#confirm-newprice').hidden = false;
   }
 
   // 同一セッション内で既にスキャン済みなら注意表示(記録する値で判定し、先頭0の違いは合算する)
@@ -307,11 +381,18 @@ async function registerItem() {
   const qty = Number($('#qty-input').value);
   if (!Number.isFinite(qty) || qty < 0) { toast('数量は0以上の数字で入力してください。', true); return; }
   const name = pendingProduct ? pendingProduct.name : ($('#confirm-newname').value.trim() || '');
+  // 未登録品だけ売価・税率・下代を読む。マスタ品は空欄(設計判断#21)
+  const ext = pendingProduct
+    ? { cost: costOf(pendingProduct), sellEx: '', taxRate: '', sellIn: '', costIn: '' }
+    : readNewPriceInputs();
+  if (!ext) { toast('売価・下代は数字で入力してください(分からなければ空欄のままで登録できます)。', true, 4000); return; }
   await dbAddItem({
     sessionId: currentSession.id,
     jan: pendingJan,
     name: name,
-    cost: pendingProduct ? costOf(pendingProduct) : '',
+    cost: ext.cost,
+    // キー名に price は使わない(v1.0系の売価と costOf() のフォールバックで混ざるため)
+    sellEx: ext.sellEx, taxRate: ext.taxRate, sellIn: ext.sellIn, costIn: ext.costIn,
     inMaster: !!pendingProduct,
     qty: qty,
     scannedAt: new Date().toISOString()
@@ -401,10 +482,14 @@ async function exportCsv() {
   if (items.length === 0) { toast('出力する明細がありません。', true); return; }
 
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['棚卸名', 'JANコード', '商品名', '原価', '数量', '読取日時']];
+  // 右の4列はスプレッドシートのK〜N列と同じ(設計判断#21)
+  const rows = [['棚卸名', 'JANコード', '商品名', '原価', '数量', '読取日時',
+    '売価(税抜)', '税率(%)', '売価(税込・入力値)', '下代(税込・入力値)']];
   // 古い順に出力。JANはマスタ側の表記にそろえる(設計判断#20)
   for (const it of [...items].reverse()) {
-    rows.push([session.name, await recordJanOf(it), it.name, costOf(it), it.qty, fmtDate(it.scannedAt)]);
+    const x = priceExtOf(it);
+    rows.push([session.name, await recordJanOf(it), it.name, costOf(it), it.qty, fmtDate(it.scannedAt),
+      x.sellEx, x.taxRate, x.sellIn, x.costIn]);
   }
   const csv = '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -446,8 +531,17 @@ async function submitToWeb() {
       // 金額が欠落しないようにするための互換措置(README設計判断#9)
       payloadItems.push({
         jan: await recordJanOf(it), name: it.name, cost: costOf(it), price: costOf(it), qty: it.qty,
-        inMaster: it.inMaster, scannedAt: it.scannedAt
+        inMaster: it.inMaster, scannedAt: it.scannedAt,
+        ...priceExtOf(it) // 未登録品の売価・税率・入力した税込額(K〜N列 — 設計判断#21)
       });
+    }
+    // 売価・下代を入力した明細があるときだけ、提出先GASがK〜N列を書ける版か先に確かめる。
+    // 古いGASは黙って捨てたまま「提出しました」になるため(設計判断#23)
+    if (payloadItems.some(i => i.taxRate !== '')) {
+      const ping = await gasPost({ action: 'ping' });
+      if (!(Number(ping.apiVersion) >= API_VERSION_FOR_PRICE)) {
+        throw new Error('提出先(GAS)が古い版のため、売価・税率を記録できません。管理者に「Code.gs の貼り直しと再デプロイ」を依頼してください');
+      }
     }
     // 通信は gasPost() に集約(エラー文言の統一・タイムアウト — 設計判断#15)
     const data = await gasPost({
@@ -936,6 +1030,10 @@ function init() {
     el.value = Number(el.value || 0) + 1;
   });
   $('#btn-register').addEventListener('click', registerItem);
+  // 未登録品の売価・下代: 入力や税率の切り替えのたびに税抜額を表示し直す
+  $('#np-sell').addEventListener('input', updateNewPriceHints);
+  $('#np-cost').addEventListener('input', updateNewPriceHints);
+  $$('input[name="np-tax"]').forEach(r => r.addEventListener('change', updateNewPriceHints));
   $('#btn-confirm-cancel').addEventListener('click', () => goto('scan'));
 
   // データ確認

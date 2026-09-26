@@ -122,6 +122,28 @@
       <span id="confirm-cost">—</span>
     </div>
     <input id="confirm-newname" class="big-input" type="text" placeholder="商品名（分かれば入力・空欄でも登録可）" hidden>
+    <!-- 未登録品のみ: 売価・税率・下代(すべて任意。記録は税抜 — README設計判断#21) -->
+    <div id="confirm-newprice" class="np" hidden>
+      <div class="np-field">
+        <label class="np-label" for="np-sell">売価 <small>値札の税込価格（任意）</small></label>
+        <div class="np-line">
+          <input id="np-sell" class="big-input np-input" type="text" inputmode="numeric" autocomplete="off" placeholder="例）1100">
+          <span id="np-sell-ex" class="np-ex" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="np-tax" role="radiogroup" aria-label="税率">
+        <span class="np-label">税率</span>
+        <label class="np-pill"><input type="radio" name="np-tax" value="10" checked><span>10%</span></label>
+        <label class="np-pill"><input type="radio" name="np-tax" value="8"><span>8%（軽減）</span></label>
+      </div>
+      <div class="np-field">
+        <label class="np-label" for="np-cost">下代 <small>税込（任意）</small></label>
+        <div class="np-line">
+          <input id="np-cost" class="big-input np-input" type="text" inputmode="numeric" autocomplete="off" placeholder="例）770">
+          <span id="np-cost-ex" class="np-ex" aria-live="polite"></span>
+        </div>
+      </div>
+    </div>
   </div>
   <label class="field-label center">数量</label>
   <div class="qty-row">

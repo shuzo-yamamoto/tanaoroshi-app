@@ -184,6 +184,27 @@ body{
 .product-status.ng{color:#B26A00;}
 .product-name{font-size:21px; font-weight:800; line-height:1.35; word-break:break-all;}
 .product-meta{display:flex; justify-content:space-between; gap:8px; margin-top:10px; color:#666; font-size:14px; flex-wrap:wrap;}
+#confirm-newname{margin-top:12px;}
+
+/* 未登録品の売価・税率・下代（README設計判断#21） */
+.np{margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
+.np-field{margin-bottom:10px;}
+.np-label{display:block; font-weight:700; font-size:14px; margin-bottom:4px;}
+.np-label small{font-weight:400; color:#777; font-size:12px; margin-left:4px;}
+.np-line{display:flex; align-items:center; gap:10px;}
+.np-input{flex:1 1 auto; min-width:0;}
+.np-ex{flex:0 0 7.5em; text-align:right; font-weight:700; font-size:15px; color:var(--ai);}
+.np-ex.bad{color:#C0392B; font-size:13px;}
+.np-tax{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+.np-tax .np-label{display:inline; margin:0 4px 0 0;}
+.np-pill{position:relative;}
+.np-pill input{position:absolute; opacity:0; width:1px; height:1px;}
+.np-pill span{
+  display:inline-flex; align-items:center; min-height:44px; padding:0 16px; border-radius:22px;
+  border:2px solid var(--line); background:#fff; font-weight:700; font-size:15px; cursor:pointer;
+}
+.np-pill input:checked + span{background:var(--ai); border-color:var(--ai); color:#fff;}
+.np-pill input:focus-visible + span{outline:3px solid var(--yamabuki); outline-offset:2px;}
 .qty-row{display:flex; gap:14px; align-items:center; justify-content:center; margin:6px 0 14px;}
 .qty-btn{
   width:76px; height:76px; border-radius:50%; border:none;

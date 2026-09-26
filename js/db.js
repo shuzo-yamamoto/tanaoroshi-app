@@ -5,7 +5,11 @@
  * ストア構成:
  *   products : 商品マスタ        key = jan   {jan, name, cost, updatedAt}
  *   sessions : 棚卸データ(親)     key = id    {id, name, createdAt, updatedAt, submittedAt}
- *   items    : 棚卸明細(子)       key = 自動   {id, sessionId, jan, name, cost, qty, scannedAt}
+ *   items    : 棚卸明細(子)       key = 自動   {id, sessionId, jan, name, cost, qty, scannedAt,
+ *                                               sellEx, taxRate, sellIn, costIn}
+ *     sellEx〜costIn は v1.4.0 で追加(未登録品の売価(税抜)・税率・入力した税込の売価/下代。
+ *     README設計判断#21)。v1.3.x以前の明細には無いので app.js の priceExtOf() を通して読む。
+ *     **新しいキーに price は使わない**(下記の costOf() が原価のフォールバックとして読むため)
  *
  * 金額キーについて(README設計判断#9):
  *   v1.1.0 で price(売価想定) → cost(原価) に改称した。

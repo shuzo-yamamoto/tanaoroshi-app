@@ -11,6 +11,8 @@
  *   2. シート「settings」を作成し、A列にキー・B列に値:
  *        token | (任意の長い英数字。PWAの設定画面と同じ値にする)
  *   2-2. エディタで setupProductMaster() を1回実行(シート「商品マスタ」を用意)
+ *   (v1.4.0へ更新するとき) 貼り直し→デプロイを管理→新しいバージョン。その後 setupDataSheetHeaders() を
+ *        実行すると既存の棚卸データシートに K1〜N1 の見出しが入る(任意。提出時にも自動で補う)
  *   3. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」
  *        次のユーザーとして実行: 自分
  *        アクセスできるユーザー: 全員
@@ -46,7 +48,15 @@ var PRODUCTS_LIMIT_MAX = 5000;
 
 // G列は v1.1.0 で「単価(売価)」→「原価」に変更(README設計判断#9)。
 // 見出しはシート新規作成時のみ書き込むため、運用中のシートは G1 を手動で直すこと。
-var HEADER = ['提出日時', '棚卸名', '棚卸ID', '担当者', 'JANコード', '商品名', '原価', '数量', 'マスタ登録', '読取日時'];
+// K〜N列は v1.4.0 で追加(未登録品の売価・税率・入力した税込額。README設計判断#21)。
+// 既存シートの K1〜N1 は提出時に ensureHeader_ が補う(設計判断#22)。
+var HEADER = ['提出日時', '棚卸名', '棚卸ID', '担当者', 'JANコード', '商品名', '原価', '数量', 'マスタ登録', '読取日時',
+  '売価(税抜)', '税率(%)', '売価(税込・入力値)', '下代(税込・入力値)'];
+/** v1.4.0 で追加した列の開始位置(0始まり。K列) */
+var HEADER_EXT_FROM = 10;
+
+// PWAが提出前に確認するAPIの版(README設計判断#23)。K〜N列を書けるのは 2 以上
+var API_VERSION = 2;
 
 /** POST受け口 */
 function doPost(e) {
@@ -63,7 +73,7 @@ function doPost(e) {
     }
 
     if (body.action === 'ping') {
-      return json_({ success: true, data: { message: '棚卸提出先に接続できています。' } });
+      return json_({ success: true, data: { message: '棚卸提出先に接続できています。', apiVersion: API_VERSION } });
     }
     if (body.action === 'submit') {
       return json_(submit_(body));
@@ -94,10 +104,14 @@ function submit_(body) {
     var sheetName = loc ? (SHEET_DATA + '_' + loc) : SHEET_DATA;
     var sheet = ensureDataSheet_(ss, sheetName);
 
-    var now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
     var items = body.items || [];
     if (items.length === 0) return { success: false, error: '明細が0件です。' };
 
+    // v1.3.x までのシートに K1〜N1 の見出しを補う。別の見出しがあれば書き込まずに止める(設計判断#22)
+    var hdr = ensureHeader_(sheet);
+    if (!hdr.ok) return { success: false, error: hdr.error };
+
+    var now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
     var rows = items.map(function (it) {
       // cost(v1.1.0以降)を優先し、無ければ price(v1.0系のPWA)を読む
       var cost = (it.cost === '' || it.cost == null) ? it.price : it.cost;
@@ -108,10 +122,15 @@ function submit_(body) {
         String(body.staff || ''),
         String(it.jan || ''),
         String(it.name || ''),
-        cost === '' || cost == null ? '' : Number(cost),
+        numOrBlank_(cost),
         Number(it.qty || 0),
         it.inMaster ? '○' : '×',
-        String(it.scannedAt || '')
+        String(it.scannedAt || ''),
+        // K〜N: 未登録品の売価・税率・入力した税込額(v1.4.0。無ければ空欄 — 設計判断#21)
+        numOrBlank_(it.sellEx),
+        numOrBlank_(it.taxRate),
+        numOrBlank_(it.sellIn),
+        numOrBlank_(it.costIn)
       ];
     });
 
@@ -119,8 +138,9 @@ function submit_(body) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, HEADER.length).setValues(rows);
 
     appendLog_('submit', (body.staff || '不明') + ' が「' + (body.session && body.session.name) +
-      '」を' + (loc ? '[' + loc + ']' : '') + '提出(' + rows.length + '行)');
-    return { success: true, data: { rows: rows.length, sheet: sheetName } };
+      '」を' + (loc ? '[' + loc + ']' : '') + '提出(' + rows.length + '行)' +
+      (hdr.added ? '。K1〜N1 の見出しを追加' : ''));
+    return { success: true, data: { rows: rows.length, sheet: sheetName, apiVersion: API_VERSION } };
   } catch (err) {
     return { success: false, error: '保存に失敗しました: ' + err.message };
   } finally {
@@ -142,6 +162,69 @@ function ensureDataSheet_(ss, name) {
   sheet.getRange('J:J').setNumberFormat('@');
   sheet.setFrozenRows(1);
   return sheet;
+}
+
+/**
+ * v1.4.0 で追加した K〜N 列の見出しを補う(README設計判断#22)。
+ * 空欄のセルだけを埋める。別の文字が入っていたら、その列が他の用途に使われている
+ * おそれがあるため何も書かずに ok:false を返す(売価等を混ぜ込まないため)。
+ * @returns {{ok:boolean, added:number, error?:string}}
+ */
+function ensureHeader_(sheet) {
+  var width = HEADER.length - HEADER_EXT_FROM;
+  var cur = sheet.getRange(1, HEADER_EXT_FROM + 1, 1, width).getValues()[0];
+  var blank = 0, conflicts = [];
+  for (var i = 0; i < width; i++) {
+    var v = String(cur[i] == null ? '' : cur[i]).trim();
+    if (v === '') blank++;
+    else if (v !== HEADER[HEADER_EXT_FROM + i]) conflicts.push(colLetter_(HEADER_EXT_FROM + i) + '1「' + v + '」');
+  }
+  if (conflicts.length) {
+    return { ok: false, added: 0, error: 'シート「' + sheet.getName() + '」の ' + conflicts.join('・') +
+      ' に別の見出しがあるため、売価などの列を追加できません。管理者に連絡してください(K〜N列を空けるか、その列を右へ移動)。' };
+  }
+  if (blank === 0) return { ok: true, added: 0 };
+  // 既存の値は期待どおりの見出しなので、K1〜N1 をまとめて書けば空欄だけが埋まる(一括書き込み — 標準§3.2)
+  sheet.getRange(1, HEADER_EXT_FROM + 1, 1, width)
+    .setValues([HEADER.slice(HEADER_EXT_FROM)]).setFontWeight('bold');
+  return { ok: true, added: blank };
+}
+
+/**
+ * 既存の棚卸データシートすべての K1〜N1 見出しを点検・追加する(再デプロイ直後に1回手動実行 — 任意)。
+ * 提出時にも自動で補うので実行しなくても動くが、衝突(K〜Nに別の見出し)があれば棚卸当日より前に分かる。
+ */
+function setupDataSheetHeaders() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('他の端末が提出中です。少し待ってから実行してください。');
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var lines = [];
+    ss.getSheets().forEach(function (sh) {
+      var name = sh.getName();
+      if (name !== SHEET_DATA && name.indexOf(SHEET_DATA + '_') !== 0) return;
+      var r = ensureHeader_(sh);
+      lines.push(name + ': ' + (!r.ok ? '要対応 — ' + r.error : (r.added ? 'K1〜N1 の見出しを追加' : '追加済み(変更なし)')));
+    });
+    var msg = lines.length ? lines.join('\n') : '棚卸データのシートがまだありません(初回の提出時に作成されます)。';
+    appendLog_('setup', '見出し点検: ' + lines.join(' / '));
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 0始まりの列番号 → 列名(A, B, …, Z, AA …) */
+function colLetter_(i) {
+  var s = '';
+  for (var n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
+  return s;
+}
+
+/** 数値の列に書く値。空欄は空欄のまま、それ以外は数値にする */
+function numOrBlank_(v) {
+  return v === '' || v == null ? '' : Number(v);
 }
 
 /* ═══════════ 商品マスタ同期(getProducts) ═══════════ */
