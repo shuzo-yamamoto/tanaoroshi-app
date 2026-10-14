@@ -118,6 +118,15 @@ body{
   word-break:break-all; -webkit-user-select:all; user-select:all;
 }
 .setup-link-row .copied{color:var(--wakaba); font-weight:700; font-size:12px; margin-left:8px;}
+
+/* エラーの記録（README設計判断#25） */
+#btn-errlog{margin-top:12px;}
+.errlog-list{list-style:none; margin:8px 0; padding:0; display:flex; flex-direction:column; gap:8px;}
+.errlog-list li{border-left:5px solid #C0392B; background:#FBFAF6; border-radius:8px; padding:8px 10px; font-size:13px;}
+.errlog-list li.warn{border-left-color:var(--yamabuki);}
+.errlog-head{font-weight:700; font-size:12px; color:#555;}
+.errlog-msg{margin-top:2px; word-break:break-all;}
+.errlog-detail{margin-top:2px; font-size:12px; color:#777; word-break:break-all;}
 .empty-msg{text-align:center; color:#888; padding:32px 8px; font-size:15px;}
 
 /* ── リスト ── */
@@ -185,6 +194,12 @@ body{
 .product-name{font-size:21px; font-weight:800; line-height:1.35; word-break:break-all;}
 .product-meta{display:flex; justify-content:space-between; gap:8px; margin-top:10px; color:#666; font-size:14px; flex-wrap:wrap;}
 #confirm-newname{margin-top:12px;}
+
+/* 販売価格（README設計判断#28）。税込を大きく、税抜を小さく */
+.product-sell{display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; margin-top:8px;}
+.sell-main{font-size:22px; font-weight:800; color:var(--sumi);}
+.sell-sub{font-size:13px; color:#777;}
+.field-label small{font-weight:400; color:#777; font-size:12px; margin-left:4px;}
 
 /* 未登録品の売価・税率・下代（README設計判断#21） */
 .np{margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}

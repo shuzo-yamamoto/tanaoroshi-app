@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>カメラ診断（管理者用）｜画箋堂 棚卸</title>
+<!--
+  カメラ診断ページ(管理者用 — README設計判断#27 / 不具合ログ#5)。
+  アプリ本体とは別ファイル。画面からはリンクしない。商品マスタ・棚卸データ・設定には一切触れない。
+  デコード手順は js/scanner.js と同じ。scanner.js を変えたら js/diag.js の「現行と同じ」も合わせること。
+-->
+<style>
+  :root{ --sumi:#1F2430; --kinari:#F7F5F0; --shu:#D93A2B; --ai:#2B5F9E; --wakaba:#2E8B57; --yamabuki:#E8A020; --line:#DDD8CE; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif; background:var(--kinari); color:var(--sumi); font-size:15px; }
+  header{ background:var(--sumi); color:#fff; padding:12px 14px; }
+  header h1{ margin:0; font-size:17px; }
+  header p{ margin:4px 0 0; font-size:12px; opacity:.85; }
+  main{ padding:12px 14px 40px; max-width:720px; margin:0 auto; }
+  section{ background:#fff; border-radius:12px; padding:12px; margin-bottom:12px; box-shadow:0 1px 4px rgba(31,36,48,.08); }
+  h2{ font-size:15px; margin:0 0 8px; }
+  label.row{ display:flex; align-items:center; gap:8px; margin:6px 0; }
+  label.row > span{ flex:0 0 7.5em; font-weight:700; font-size:13px; }
+  select, input[type=text]{ flex:1; min-height:40px; font-size:15px; border:2px solid var(--line); border-radius:8px; padding:4px 8px; background:#fff; }
+  .btns{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  button{ min-height:44px; padding:0 14px; border:none; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; background:var(--ai); color:#fff; }
+  button.ghost{ background:#fff; color:var(--sumi); border:2px solid var(--line); }
+  button.go{ background:var(--shu); }
+  button:disabled{ background:#C9C9C9; color:#fff; border-color:#C9C9C9; }
+  .note{ font-size:12px; color:#666; margin:6px 0 0; }
+  .warn{ color:#B26A00; font-weight:700; }
+  .err{ color:#C0392B; font-weight:700; }
+  .viewport{ position:relative; background:#000; border-radius:10px; overflow:hidden; aspect-ratio:3/4; max-height:60vh; margin:0 auto; }
+  .viewport video{ width:100%; height:100%; object-fit:cover; display:block; }
+  .viewport .line{ position:absolute; left:6%; right:6%; top:50%; height:2px; background:var(--shu); box-shadow:0 0 6px var(--shu); }
+  .viewport .roi{ position:absolute; left:0; right:0; top:35%; height:30%; border:2px dashed var(--yamabuki); display:none; }
+  .viewport.roi-on .roi{ display:block; }
+  #live{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; white-space:pre-wrap; margin:8px 0 0; }
+  pre{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; background:#FBFAF6; border-radius:8px; padding:8px; margin:6px 0 0; max-height:320px; overflow:auto; }
+  table{ border-collapse:collapse; width:100%; font-size:12px; }
+  th, td{ border:1px solid var(--line); padding:4px; text-align:left; vertical-align:top; }
+  th{ background:#F3F0E8; }
+  .shots img{ max-width:100%; border:1px solid var(--line); border-radius:6px; display:block; margin-top:6px; }
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📷 カメラ診断（管理者用）</h1>
+  <p>読み取りにくい端末で、カメラの状態と読取の成績を計測します。商品マスタ・棚卸データ・設定には触れません。 診断 v<span id="diag-ver"></span></p>
+</header>
+<main>
+
+<section>
+  <h2>1. 準備</h2>
+  <label class="row"><span>目的のコード</span><input id="target" type="text" inputmode="numeric" value="2000400270070"></label>
+  <label class="row"><span>計測時間</span>
+    <select id="dur"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="60">60秒</option></select></label>
+  <p class="note">同じラベル・同じ距離（例：10cm と 15cm）・同じ明るさで、条件を<b>1回に1つだけ</b>変えて計測してください。最初は全部「アプリと同じ」で計測します。</p>
+</section>
+
+<section>
+  <h2>2. 条件（基準はすべて「アプリと同じ」）</h2>
+  <label class="row"><span>レンズ</span><select id="c-lens"><option value="">アプリと同じ（背面カメラを自動選択）</option></select></label>
+  <label class="row"><span>フォーカス</span>
+    <select id="c-focus"><option value="">アプリと同じ（指定しない）</option><option value="continuous">連続（continuous）</option><option value="single-shot">単発（single-shot）</option></select></label>
+  <label class="row"><span>ズーム</span>
+    <select id="c-zoom"><option value="">アプリと同じ（×1）</option><option value="1.5">ハードウェア ×1.5</option><option value="2">ハードウェア ×2</option><option value="3">ハードウェア ×3</option></select></label>
+  <label class="row"><span>解像度</span>
+    <select id="c-res"><option value="1920x1080">アプリと同じ（1920×1080を要求）</option><option value="2560x1440">2560×1440を要求</option><option value="3840x2160">3840×2160を要求</option></select></label>
+  <label class="row"><span>読む範囲</span>
+    <select id="c-roi"><option value="">アプリと同じ（画面全体）</option><option value="band">中央の帯だけ（高さ30%）</option></select></label>
+  <p id="cond-warn" class="note warn" hidden>複数の条件を同時に変えています。どの変更が効いたか分からなくなるので、1つだけにしてください。</p>
+  <div class="btns">
+    <button id="b-cam" class="ghost">カメラを起動</button>
+    <button id="b-run" class="go">▶ この条件で計測</button>
+    <button id="b-stop" class="ghost" disabled>■ 止める</button>
+    <button id="b-torch" class="ghost" disabled>💡 ライト</button>
+    <button id="b-shot" class="ghost" disabled>📸 フレームを撮る</button>
+  </div>
+  <div class="viewport" id="vp" style="margin-top:10px;">
+    <video id="v" playsinline muted></video>
+    <div class="line"></div><div class="roi"></div>
+  </div>
+  <div id="live">カメラは止まっています。</div>
+</section>
+
+<section>
+  <h2>3. 結果（計測1回につき1行）</h2>
+  <div style="overflow-x:auto"><table id="res"><thead><tr>
+    <th>#</th><th>条件</th><th>実際のカメラ</th><th>試行/秒・処理ms</th><th>読取率</th><th>最初に読めた/確定</th><th>鋭さ</th><th>その他</th>
+  </tr></thead><tbody></tbody></table></div>
+  <p class="note">読取率＝目的のコードが読めたフレームの割合。確定＝アプリと同じ「同じコードが2回読めたら確定」。鋭さ＝中央付近の明暗の差の大きさ（ピントが合うほど大きい。同じラベル・距離どうしでのみ比べられます）。</p>
+  <div class="btns">
+    <button id="b-copy">結果をコピー</button>
+    <button id="b-clear" class="ghost">結果を消す</button>
+  </div>
+</section>
+
+<section>
+  <h2>4. カメラの情報</h2>
+  <pre id="info">（カメラを起動すると表示されます）</pre>
+</section>
+
+<section class="shots">
+  <h2>5. フレーム画像</h2>
+  <p class="note">読めないときに「📸 フレームを撮る」を押すと、画面全体の縮小と、赤線付近を等倍で切り出した画像が出ます。ぼけているのか、小さすぎるのか、反射しているのかを目で確かめてください（長押しで保存できます）。</p>
+  <div id="shots"></div>
+</section>
+
+</main>
+<script src="js/zxing.min.js"></script>
+<script src="js/diag.js"></script>
+</body>
+</html>

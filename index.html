@@ -117,6 +117,11 @@
   <div id="confirm-card" class="product-card">
     <div id="confirm-status" class="product-status"></div>
     <div id="confirm-name" class="product-name">—</div>
+    <!-- 販売価格（マスタ登録済みの商品のみ。税込を大きく・税抜を小さく — README設計判断#28） -->
+    <div id="confirm-sell" class="product-sell" hidden>
+      <span id="confirm-sell-main" class="sell-main"></span>
+      <span id="confirm-sell-sub" class="sell-sub"></span>
+    </div>
     <div class="product-meta">
       <span>JAN: <span id="confirm-jan" class="mono">—</span></span>
       <span id="confirm-cost">—</span>
@@ -189,7 +194,7 @@
   <ul id="product-list" class="card-list"></ul>
   <div class="stack">
     <button id="btn-sync-products" class="big-btn btn-primary">☁️ スプレッドシートから同期</button>
-    <p class="hint">商品マスタの正はスプレッドシートです。更新されたら同期を押してください（端末のマスタは全件入れ替わります）。CSV取り込みは通信できないときの予備で、既存マスタに追加・上書きします。</p>
+    <p class="hint">商品マスタの正はスプレッドシートです。更新されたら同期を押してください（端末のマスタは全件入れ替わります）。<strong>棚卸の当日に全員で一斉に同期すると混雑で失敗しやすいので、前日までに同期しておいてください。</strong>CSV取り込みは通信できないときの予備で、既存マスタに追加・上書きします。</p>
     <label class="big-btn btn-secondary file-btn">
       📥 CSVから取り込む（予備）
       <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
@@ -204,6 +209,8 @@
   <div class="map-row"><label>JANコード</label><select id="map-jan" class="big-select"></select></div>
   <div class="map-row"><label>商品名</label><select id="map-name" class="big-select"></select></div>
   <div class="map-row"><label>原価（任意）</label><select id="map-cost" class="big-select"></select></div>
+  <div class="map-row"><label>販売価格（任意）</label><select id="map-sell" class="big-select"></select></div>
+  <p id="csv-taxcols" class="hint"></p>
   <div id="csv-preview" class="csv-preview"></div>
   <button id="btn-csv-import" class="big-btn btn-primary">この設定で取り込む</button>
 </section>
@@ -216,6 +223,8 @@
   <input id="padd-name" class="big-input" type="text" placeholder="ホルベイン 透明水彩 12色" required aria-required="true">
   <label class="field-label" for="padd-cost">原価（任意）</label>
   <input id="padd-cost" class="big-input" type="number" inputmode="numeric" placeholder="1155">
+  <label class="field-label" for="padd-sell">販売価格 <small>値札の税込価格（任意）</small></label>
+  <input id="padd-sell" class="big-input" type="text" inputmode="numeric" autocomplete="off" placeholder="例）1650">
   <p class="hint">JANコードと商品名の両方を入力すると、登録ボタンが押せるようになります。</p>
   <button id="btn-padd-save" class="big-btn btn-primary" disabled>商品マスタに登録する</button>
 </section>
@@ -240,6 +249,18 @@
     <div id="setup-link-list"></div>
   </div>
   <button id="btn-setup-links" class="big-btn btn-ghost">🔗 配布用の設定リンクを作る</button>
+
+  <!-- エラーの記録（同期・提出・接続テスト。README設計判断#25） -->
+  <button id="btn-errlog" class="big-btn btn-ghost">📝 エラーの記録（<span id="errlog-count">0</span>件）</button>
+  <div id="errlog-box" class="setup-box" hidden>
+    <p class="hint">同期・提出・接続テストで起きたエラーを、この端末に新しい順で最大30件残しています。うまくいかなかったときは「記録をコピー」を押して、管理者に送ってください。</p>
+    <p id="errlog-empty" class="hint">記録はありません。</p>
+    <ul id="errlog-list" class="errlog-list"></ul>
+    <div class="row">
+      <button id="btn-errlog-copy" class="big-btn btn-secondary">記録をコピー</button>
+      <button id="btn-errlog-clear" class="big-btn btn-ghost danger-text">記録を消す</button>
+    </div>
+  </div>
 
   <p class="hint">アプリのバージョン: <span id="app-version"></span></p>
 </section>

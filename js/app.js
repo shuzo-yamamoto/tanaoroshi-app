@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -35,6 +35,33 @@ function locationLabel(code) {
 const SYNC_PAGE_SIZE = 2000;
 /** 1リクエストの上限時間。応答が返らずローディングが残り続けるのを防ぐ */
 const SYNC_TIMEOUT_MS = 60000;
+/**
+ * 同期で一時的なエラーが出たときの再試行(README設計判断#24)。
+ * 待ち時間は BASE×2^n を 0.5〜1.5倍にばらつかせる(約1→2→4秒)。最大 MAX 回。
+ * **読み取り(getProducts)専用**。提出は二重追記になり得るので再試行しない
+ */
+const SYNC_RETRY_MAX = 3;
+const SYNC_RETRY_BASE_MS = 1000;
+
+/**
+ * 販売価格の表示(README設計判断#28)。**確認できた値だけを書く**(推測で増やさない)。
+ * 判定は表示のたびに行うので、ここを直せば再同期しなくても反映される。
+ */
+const PRICE_CONFIG = {
+  // スマレジ「税区分」→ 商品単価の扱い('excl'=税抜 / 'incl'=税込 / 'exempt'=非課税)。
+  // 1=税抜: 2026-10確認(4900669031062 商品単価400円・値札440円)。ここに無い値は「税区分不明」と表示
+  taxDiv: { '1': 'excl' },
+  // 税率の判定表。上から順に、match の項目がすべて一致した最初の行の rate を使う。
+  // 項目: taxSet(税設定) / deptTax(部門の税設定を使用) / dept(部門ID) / taxDiv(税区分)。空欄は ''。
+  // どれにも当てはまらなければ「税率不明」(推測で10%にしない)。
+  // 空欄の税設定の扱いは、GASの inspectPriceColumns() で本番の値を調べてから足す
+  taxRateRules: [
+    { match: { taxSet: '10000001' }, rate: 8 }   // 軽減税率(2026-10 ユーザー確認)
+  ],
+  // 税抜→税込の端数処理: 'floor'(切り捨て) / 'round'(四捨五入) / 'ceil'(切り上げ)。
+  // スマレジの設定を確認中のため仮に切り捨て
+  rounding: 'floor'
+};
 
 /* ═══════════ ユーティリティ ═══════════ */
 
@@ -98,6 +125,37 @@ const Settings = (() => {
     if (usable) localStorage.setItem(KEY, JSON.stringify(obj));
   }
   return { load, save };
+})();
+
+/**
+ * エラーの記録(README設計判断#25)。同期・提出・接続テストのエラーを時刻つきで端末に残す。
+ * トーストは数秒で消え、10月の不具合では原因の文言が誰にも分からなかったため。
+ * 新しい順に最大 MAX 件。トークン・提出先URLは記録しない。localStorageが使えない環境ではメモリ保持
+ */
+const ErrorLog = (() => {
+  const KEY = 'gasendo-tanaoroshi-errlog';
+  const MAX = 30;
+  let mem = [];
+  function list() {
+    try { const v = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (e) { return mem; }
+  }
+  function save(arr) {
+    mem = arr;
+    try { localStorage.setItem(KEY, JSON.stringify(arr)); } catch (e) { /* メモリ保持のみ */ }
+  }
+  /** @param {{kind:string, level?:'error'|'warn', message:string, detail?:object}} ev */
+  function add(ev) {
+    const entry = {
+      at: new Date().toISOString(), kind: ev.kind, level: ev.level || 'error',
+      message: String(ev.message || ''), detail: ev.detail || null,
+      ver: APP_VERSION, online: navigator.onLine
+    };
+    save([entry, ...list()].slice(0, MAX));
+    return entry;
+  }
+  function clear() { save([]); }
+  return { add, list, clear };
 })();
 
 /* ═══════════ 画面遷移 ═══════════ */
@@ -205,6 +263,48 @@ function parseYen(s) {
 function taxExcluded(incl, ratePct) {
   const d = 100 + ratePct;
   return Math.floor((200 * incl + d) / (2 * d));
+}
+
+/* ── マスタ品の販売価格の表示(README設計判断#28) ── */
+
+/** 税抜(円)→税込(円)。端数処理は PRICE_CONFIG.rounding。整数だけで計算する(標準§4-2) */
+function taxIncluded(excl, ratePct, mode = PRICE_CONFIG.rounding) {
+  const n = excl * (100 + ratePct);            // 税込×100
+  if (mode === 'ceil') return Math.floor((n + 99) / 100);
+  if (mode === 'round') return Math.floor((2 * n + 100) / 200);
+  return Math.floor(n / 100);                  // floor(既定)
+}
+
+/** 判定表で税率を決める。当てはまらなければ null(=税率不明。推測で10%にしない) */
+function taxRateOf(p) {
+  for (const rule of PRICE_CONFIG.taxRateRules) {
+    const ok = Object.keys(rule.match).every(k => String(p[k] == null ? '' : p[k]).trim() === rule.match[k]);
+    if (ok) return rule.rate;
+  }
+  return null;
+}
+
+/**
+ * 商品確認画面の販売価格の表示文。値札と見比べるため税込を大きく(main)、税抜を小さく(sub)。
+ * 税区分・税率が判定できないときは、分からないことが分かる表示にする(推測した値を出さない)。
+ * @returns {{main:string, sub:string} | null} 販売価格が無ければ null
+ */
+function sellDisplayOf(p) {
+  if (!p) return null;
+  const v = parseYen(p.sell);
+  if (v === '' || Number.isNaN(v)) return null;
+  const y = (n) => '¥' + n.toLocaleString('ja-JP');
+  // 個別登録で値札の税込価格を入れた商品
+  if (p.sellIncl === '1') return { main: `売価 ${y(v)}（税込）`, sub: '' };
+  const basis = PRICE_CONFIG.taxDiv[String(p.taxDiv == null ? '' : p.taxDiv).trim()];
+  const rate = taxRateOf(p);
+  if (basis === 'excl') {
+    if (rate == null) return { main: `売価 ${y(v)}（税抜）`, sub: '税率不明のため税込は表示できません' };
+    return { main: `売価 ${y(taxIncluded(v, rate))}（税込）`, sub: `税抜 ${y(v)}・税率${rate}%` };
+  }
+  if (basis === 'incl') return { main: `売価 ${y(v)}（税込）`, sub: rate == null ? '' : `税抜 ${y(taxExcluded(v, rate))}・税率${rate}%` };
+  if (basis === 'exempt') return { main: `売価 ${y(v)}（非課税）`, sub: '' };
+  return { main: `売価 ${y(v)}`, sub: '税区分不明のため税込・税抜は判定できません' };
 }
 
 function selectedTaxRate() {
@@ -344,6 +444,11 @@ async function openConfirm(code) {
     $('#confirm-name').textContent = pendingProduct.name || '(名称未設定)';
     const c = costOf(pendingProduct);
     $('#confirm-cost').textContent = c === '' ? '' : '原価 ' + fmtPrice(c);
+    // 販売価格(設計判断#28)。同期前の古いマスタ等で無ければ出さない
+    const sd = sellDisplayOf(pendingProduct);
+    $('#confirm-sell').hidden = !sd;
+    $('#confirm-sell-main').textContent = sd ? sd.main : '';
+    $('#confirm-sell-sub').textContent = sd ? sd.sub : '';
     newNameInput.hidden = true;
     $('#confirm-newprice').hidden = true;
   } else {
@@ -352,6 +457,7 @@ async function openConfirm(code) {
     status.className = 'product-status ng';
     $('#confirm-name').textContent = '未登録の商品';
     $('#confirm-cost').textContent = '';
+    $('#confirm-sell').hidden = true;
     newNameInput.hidden = false;
     newNameInput.value = '';
     // 売価・税率・下代は商品ごとに入力し直す(税率の初期値は10%)
@@ -556,7 +662,8 @@ async function submitToWeb() {
     renderDataView();
   } catch (e) {
     console.error(e);
-    toast('提出に失敗しました：' + e.message + '(データは端末に残っています。もう一度提出してください)', true, 6000);
+    ErrorLog.add({ kind: '提出', message: e.message, detail: { session: session.name, items: items.length, status: e.status || null } });
+    toast('提出に失敗しました：' + e.message + '(データは端末に残っています。もう一度提出してください。記録：設定→エラーの記録)', true, 8000);
   } finally {
     spinner(false);
   }
@@ -592,11 +699,16 @@ async function renderProducts() {
 
 /* ── スプレッドシートから同期(設計判断#11) ── */
 
-/** GASへPOSTし data を返す。失敗時は throw(呼び出し側でtoast表示 — 標準§3.1) */
+/**
+ * GASへPOSTし data を返す。失敗時は throw(呼び出し側でtoast表示 — 標準§3.1)。
+ * 投げる Error には、やり直せば通る見込みがあるものに transient=true、HTTPエラーには status を付ける
+ * (同期の再試行の判断とエラーの記録に使う — 設計判断#24・#25)
+ */
 async function gasPost(payload, timeoutMs = SYNC_TIMEOUT_MS) {
   const conf = Settings.load();
   const ctl = new AbortController();
   const tm = setTimeout(() => ctl.abort(), timeoutMs);
+  const transient = (msg, extra) => Object.assign(new Error(msg), { transient: true }, extra || {});
   try {
     const res = await fetch(conf.gasUrl, {
       method: 'POST',
@@ -606,24 +718,56 @@ async function gasPost(payload, timeoutMs = SYNC_TIMEOUT_MS) {
     });
     // GASはURL誤り・デプロイ設定違いのときHTMLやエラーページを返す。
     // その場合 res.json() の例外文がそのまま画面に出ると原因が分からないので言い換える
-    if (!res.ok) throw new Error(`サーバーがエラーを返しました(HTTP ${res.status})。提出先URLとデプロイ設定を確認してください。`);
+    if (!res.ok) throw transient(`サーバーがエラーを返しました(HTTP ${res.status})。提出先URLとデプロイ設定を確認してください。`, { status: res.status });
     const text = await res.text();
     let json;
     try {
       json = JSON.parse(text);
     } catch (e) {
-      throw new Error('応答を解釈できませんでした。提出先URLが正しいか、デプロイの「アクセスできるユーザー」が「全員」になっているか確認してください。');
+      // 混雑時にGoogle側が処理前にエラーページを返す場合もあるので、一時的なものとして扱う
+      throw transient('応答を解釈できませんでした。提出先URLが正しいか、デプロイの「アクセスできるユーザー」が「全員」になっているか確認してください。');
     }
-    if (!json.success) throw new Error(json.error || '不明なエラー');
+    if (!json.success) {
+      const err = new Error(json.error || '不明なエラー');
+      // GAS内でスプレッドシート等の例外を受け止めた場合(gas/Code.gs の「…できませんでした: 」)は一時的なものとみなす。
+      // 認証失敗・シートや見出しが無い等は、何度やっても同じなので一時的としない
+      if (/(読み取れませんでした|処理できませんでした): /.test(err.message)) err.transient = true;
+      throw err;
+    }
     return json.data;
   } catch (e) {
     // ブラウザ生の英語例外(Load failed / Failed to fetch など)は店頭スタッフに伝わらないため
     // 日本語の対処つき文言へ言い換える(README設計判断#15)。呼び出し側で用途(提出/同期/接続)を補う
-    if (e.name === 'AbortError') throw new Error('応答がありません(60秒)。電波の良い場所でもう一度お試しください。');
-    if (e instanceof TypeError) throw new Error('通信できませんでした。電波の良い場所でもう一度お試しください。');
+    if (e.name === 'AbortError') throw transient('応答がありません(60秒)。電波の良い場所でもう一度お試しください。');
+    if (e instanceof TypeError) throw transient('通信できませんでした。電波の良い場所でもう一度お試しください。');
     throw e;
   } finally {
     clearTimeout(tm);
+  }
+}
+
+/**
+ * 読み取り専用のGAS呼び出しを、一時的なエラーのときだけ再試行する(README設計判断#24)。
+ * 待ち時間を毎回ばらつかせ、同時に失敗した端末が同じ瞬間にやり直して再び混むのを避ける。
+ * **提出(submit)には使わないこと**(届いていたのに返事だけ失われた場合、二重に追記されるため)
+ * @param {(n:number, max:number, err:Error) => void} [onRetry] 再試行の直前に呼ぶ(画面表示用)
+ * @returns {Promise<{data:any, retries:number, reasons:string[]}>}
+ */
+async function gasPostRetry(payload, onRetry) {
+  const reasons = [];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return { data: await gasPost(payload), retries: attempt, reasons };
+    } catch (e) {
+      if (!e.transient || attempt >= SYNC_RETRY_MAX) {
+        e.retries = attempt; e.reasons = reasons;
+        throw e;
+      }
+      reasons.push(e.message);
+      if (onRetry) onRetry(attempt + 1, SYNC_RETRY_MAX, e);
+      const wait = SYNC_RETRY_BASE_MS * Math.pow(2, attempt) * (0.5 + Math.random());
+      await new Promise(r => setTimeout(r, wait));
+    }
   }
 }
 
@@ -640,12 +784,22 @@ async function syncProducts() {
   }
 
   spinner(true, '商品マスタを同期中…');
+  const t0 = Date.now();
+  let offset = 0, total = 0, page = 0, retriesTotal = 0;
+  const reasons = [];
   try {
     // 全ページを取得し終えてから置き換える。途中で切れても既存マスタを壊さない(設計判断#13)
     const all = [];
-    let offset = 0, total = 0, aligned = 0;
+    let aligned = 0;
+    const progress = () => `商品マスタを同期中… ${offset.toLocaleString('ja-JP')} / ${total ? total.toLocaleString('ja-JP') : '?'}件`;
     for (;;) {
-      const data = await gasPost({ action: 'getProducts', offset, limit: SYNC_PAGE_SIZE });
+      page++;
+      // 失敗したページだけを再試行する(設計判断#24)
+      const r = await gasPostRetry({ action: 'getProducts', offset, limit: SYNC_PAGE_SIZE },
+        (n, max) => spinner(true, `${progress()}（混雑のため再試行 ${n}/${max}）`));
+      retriesTotal += r.retries;
+      reasons.push(...r.reasons);
+      const data = r.data;
       total = Number(data.total) || 0;
       for (const it of data.items) {
         // 12桁のUPCや先頭0が落ちたJANを13桁の表記にそろえてから保存する(設計判断#19)
@@ -654,7 +808,7 @@ async function syncProducts() {
         all.push({ ...it, jan });
       }
       offset += Number(data.count) || 0;
-      spinner(true, `商品マスタを同期中… ${offset.toLocaleString('ja-JP')} / ${total.toLocaleString('ja-JP')}件`);
+      spinner(true, progress());
       if (!data.count || offset >= total) break;
     }
     if (all.length === 0) {
@@ -675,10 +829,19 @@ async function syncProducts() {
     // 正しい12桁UPCでも数に入るため「欠けた」「補正」とは言わない。シートの異常と誤解させないため(設計判断#19)
     if (aligned > 0) notes.push(`${aligned.toLocaleString('ja-JP')}件のJANを13桁の表記にそろえました`);
     toast(`${all.length.toLocaleString('ja-JP')}件を同期しました${notes.length ? `(${notes.join('・')})` : ''}。`, false, aligned > 0 ? 6000 : 4000);
+    // 再試行の末に成功した場合も「注意」として残す。混雑の兆候をつかむため(設計判断#25)
+    if (retriesTotal > 0) {
+      ErrorLog.add({ kind: '同期', level: 'warn', message: `再試行のうえ成功(再試行 ${retriesTotal} 回)`,
+        detail: { pages: page, total, elapsedMs: Date.now() - t0, reasons } });
+    }
     renderProducts();
   } catch (e) {
     console.error(e);
-    toast('同期に失敗しました：' + e.message + '(端末の商品マスタはそのまま残っています)', true, 6000);
+    ErrorLog.add({ kind: '同期', message: e.message, detail: {
+      page, offset, total: total || null, retries: e.retries || 0, status: e.status || null,
+      elapsedMs: Date.now() - t0, reasons: reasons.concat(e.reasons || [])
+    } });
+    toast('同期に失敗しました：' + e.message + '(端末の商品マスタはそのまま残っています。記録：設定→エラーの記録)', true, 8000);
   } finally {
     spinner(false);
   }
@@ -753,6 +916,11 @@ async function handleCsvFile(file) {
   }
 }
 
+/** 見出しが完全一致する列の位置(前後の空白は無視)。無ければ -1 */
+function exactCol(headers, name) {
+  return headers.findIndex(h => String(h == null ? '' : h).trim() === name);
+}
+
 function buildCsvMapUI() {
   const { headers, rows } = csvParsed;
   const guess = (cands) => {
@@ -764,12 +932,23 @@ function buildCsvMapUI() {
     name: guess(['商品名', '品名']),
     // 取り込むのは原価(スマレジCSVのH列)。「商品単価」(売価)や
     // 「オープン価格」(0/1のフラグ)を拾わないよう候補を原価系に限定する(設計判断#9)
-    cost: guess(['原価', '仕入原価', '仕入価格', '仕入単価'])
+    cost: guess(['原価', '仕入原価', '仕入価格', '仕入単価']),
+    // 販売価格は完全一致だけ(「価格」の部分一致は「オープン価格」に当たるため — 設計判断#28)
+    sell: exactCol(headers, '商品単価')
   };
-  for (const key of ['jan', 'name', 'cost']) {
+  // 税区分・税設定・部門の税設定を使用・部門IDは画面で選ばせず、見出しの完全一致で自動判定する
+  // (部分一致にすると「税区分」が「免税区分」に、「税設定」が「部門の税設定を使用」に当たるため)
+  csvParsed.taxCols = {
+    taxDiv: exactCol(headers, '税区分'), taxSet: exactCol(headers, '税設定'),
+    deptTax: exactCol(headers, '部門の税設定を使用'), dept: exactCol(headers, '部門ID')
+  };
+  const found = Object.entries({ 税区分: 'taxDiv', 税設定: 'taxSet', 部門の税設定を使用: 'deptTax', 部門ID: 'dept' })
+    .map(([label, k]) => `${label}:${csvParsed.taxCols[k] >= 0 ? (csvParsed.taxCols[k] + 1) + '列目' : 'なし'}`);
+  $('#csv-taxcols').textContent = '販売価格の税込表示に使う列(見出しで自動判定): ' + found.join(' ／ ');
+  for (const key of ['jan', 'name', 'cost', 'sell']) {
     const sel = $('#map-' + key);
     sel.innerHTML = '';
-    if (key === 'cost') {
+    if (key === 'cost' || key === 'sell') {
       const op = document.createElement('option');
       op.value = '-1'; op.textContent = '(取り込まない)';
       sel.appendChild(op);
@@ -780,7 +959,7 @@ function buildCsvMapUI() {
       op.textContent = `${i + 1}列目: ${h}`;
       sel.appendChild(op);
     });
-    sel.value = String(defaults[key] >= 0 ? defaults[key] : (key === 'cost' ? -1 : 0));
+    sel.value = String(defaults[key] >= 0 ? defaults[key] : ((key === 'cost' || key === 'sell') ? -1 : 0));
   }
   // プレビュー(先頭3行)
   const pv = $('#csv-preview');
@@ -793,6 +972,8 @@ async function importCsv() {
   const janIdx = Number($('#map-jan').value);
   const nameIdx = Number($('#map-name').value);
   const costIdx = Number($('#map-cost').value);
+  const sellIdx = Number($('#map-sell').value);
+  const taxCols = csvParsed.taxCols || {};
   spinner(true, '商品マスタを取り込み中…');
   try {
     const list = [];
@@ -803,11 +984,17 @@ async function importCsv() {
       // 12桁のUPCや、Excelで保存して先頭0が落ちたJANを13桁の表記にそろえる(設計判断#19)
       const jan = normalizeMasterJan(raw);
       if (jan !== raw) aligned++;
-      list.push({
+      const p = {
         jan: jan,
         name: String(r[nameIdx] ?? '').trim(),
         cost: costIdx >= 0 ? String(r[costIdx] ?? '').trim().replace(/[¥,\s]/g, '') : ''
-      });
+      };
+      // 販売価格の表示用(同期と同じキー。空の値は持たない — 設計判断#28)
+      if (sellIdx >= 0) { const s = String(r[sellIdx] ?? '').trim().replace(/[¥,\s]/g, ''); if (s) p.sell = s; }
+      for (const k of ['taxDiv', 'taxSet', 'deptTax', 'dept']) {
+        if (taxCols[k] >= 0) { const v = String(r[taxCols[k]] ?? '').trim(); if (v) p[k] = v; }
+      }
+      list.push(p);
     }
     if (list.length === 0) throw new Error('取り込める行がありません。JANコードの列指定を確認してください。');
     await dbPutProducts(list);
@@ -845,10 +1032,15 @@ async function addProductManually() {
   if (!jan) { toast('JANコードを入力してください。', true); return; }
   if (!/^\d{4,14}$/.test(jan)) { toast('JANコードは数字で入力してください(通常13桁)。', true); return; }
   if (!name) { toast('商品名を入力してください。', true); return; }
+  // 販売価格は値札の税込価格のまま保存し、税込として表示する(任意 — 設計判断#28)
+  const sell = parseYen($('#padd-sell').value);
+  if (Number.isNaN(sell)) { toast('販売価格は数字で入力してください(分からなければ空欄で登録できます)。', true); return; }
   // UPCの印字(12桁)をそのまま打った場合もスキャン値(先頭0付き13桁)にそろえる(設計判断#19)
   const key = normalizeMasterJan(jan);
-  await dbPutProducts([{ jan: key, name, cost }]);
-  $('#padd-jan').value = ''; $('#padd-name').value = ''; $('#padd-cost').value = '';
+  const p = { jan: key, name, cost };
+  if (sell !== '') { p.sell = String(sell); p.sellIncl = '1'; }
+  await dbPutProducts([p]);
+  $('#padd-jan').value = ''; $('#padd-name').value = ''; $('#padd-cost').value = ''; $('#padd-sell').value = '';
   updatePaddButton();
   toast(key !== jan ? `登録しました：${name}（JANを13桁の表記 ${key} にそろえました）` : `登録しました：${name}`);
   goto('products');
@@ -865,6 +1057,75 @@ function renderSettings() {
   $('#app-version').textContent = APP_VERSION;
   // 生成済みリンクは設定変更で古くなるため、開き直すたびに畳む
   $('#setup-link-box').hidden = true;
+  $('#errlog-box').hidden = true;
+  renderErrorLog();
+}
+
+/* ── エラーの記録(設計判断#25) ── */
+
+function fmtDateSec(iso) {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${fmtDate(iso)}:${p(d.getSeconds())}`;
+}
+
+/** 記録の補足情報を1行の文字にする */
+function errDetailText(ev) {
+  const d = ev.detail || {};
+  const parts = [];
+  if (d.page) parts.push(`${d.page}ページ目` + (d.total ? `(全${d.total}件中 ${d.offset ?? '?'}件目から)` : ''));
+  if (d.pages) parts.push(`${d.pages}ページ・全${d.total}件`);
+  if (d.retries) parts.push(`再試行${d.retries}回`);
+  if (d.status) parts.push(`HTTP ${d.status}`);
+  if (d.elapsedMs) parts.push(`${Math.round(d.elapsedMs / 100) / 10}秒`);
+  if (d.session) parts.push(`棚卸「${d.session}」${d.items}件`);
+  if (d.reasons && d.reasons.length) parts.push('途中のエラー: ' + [...new Set(d.reasons)].join(' / '));
+  return parts.join('・');
+}
+
+function renderErrorLog() {
+  const list = ErrorLog.list();
+  $('#errlog-count').textContent = list.length;
+  const ul = $('#errlog-list');
+  ul.innerHTML = '';
+  $('#errlog-empty').hidden = list.length > 0;
+  for (const ev of list) {
+    const li = document.createElement('li');
+    li.className = ev.level === 'warn' ? 'warn' : 'err';
+    li.innerHTML = '<div class="errlog-head"></div><div class="errlog-msg"></div><div class="errlog-detail"></div>';
+    li.querySelector('.errlog-head').textContent =
+      `${fmtDateSec(ev.at)}　${ev.kind}　${ev.level === 'warn' ? '注意' : '失敗'}${ev.online ? '' : '(オフライン)'}`;
+    li.querySelector('.errlog-msg').textContent = ev.message;
+    li.querySelector('.errlog-detail').textContent = errDetailText(ev);
+    ul.appendChild(li);
+  }
+}
+
+/** 管理者に送るための文字。トークン・提出先URLは含めない */
+function errorLogText() {
+  const conf = Settings.load();
+  const head = [
+    `画箋堂 棚卸アプリ エラーの記録（${fmtDateSec(new Date().toISOString())} 時点）`,
+    `アプリ v${APP_VERSION} ／ 拠点 ${locationLabel(conf.location) || '未設定'} ／ 担当 ${conf.staff || '未設定'}`,
+    `端末: ${navigator.userAgent}`,
+    ''
+  ];
+  const rows = ErrorLog.list().map(ev =>
+    `[${fmtDateSec(ev.at)}] ${ev.kind} ${ev.level === 'warn' ? '注意' : '失敗'} v${ev.ver}${ev.online ? '' : ' オフライン'}\n  ${ev.message}` +
+    (errDetailText(ev) ? `\n  ${errDetailText(ev)}` : ''));
+  return head.concat(rows.length ? rows : ['(記録はありません)']).join('\n');
+}
+
+async function copyErrorLog() {
+  const text = errorLogText();
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+    ta.remove();
+  }
+  toast(ok ? 'エラーの記録をコピーしました。メール等に貼り付けて管理者に送ってください。' : 'コピーできませんでした。', !ok, 3500);
 }
 
 /** 拠点セレクトを組み立てる(先頭は未選択) */
@@ -961,6 +1222,8 @@ async function testConnection() {
     const data = await gasPost({ action: 'ping' }); // 通信は gasPost() に集約(設計判断#15)
     toast('接続OK：' + (data.message || '応答あり'));
   } catch (e) {
+    ErrorLog.add({ kind: '接続テスト', message: e.message, detail: { status: e.status || null } });
+    renderErrorLog();
     toast('接続に失敗しました：' + e.message, true, 5000);
   } finally {
     spinner(false);
@@ -1066,6 +1329,16 @@ function init() {
   $('#btn-set-save').addEventListener('click', saveSettings);
   $('#btn-set-test').addEventListener('click', testConnection);
   $('#btn-setup-links').addEventListener('click', renderSetupLinks);
+  // エラーの記録(設計判断#25)
+  $('#btn-errlog').addEventListener('click', () => {
+    renderErrorLog();
+    $('#errlog-box').hidden = !$('#errlog-box').hidden;
+  });
+  $('#btn-errlog-copy').addEventListener('click', copyErrorLog);
+  $('#btn-errlog-clear').addEventListener('click', () => {
+    if (!confirm('エラーの記録を消しますか？(管理者に送り終えてから消してください)')) return;
+    ErrorLog.clear(); renderErrorLog();
+  });
 
   // 設定リンク(#setup=…)で開かれていたら初期設定を自動入力してから設定画面へ
   const setupLoc = applySetupLink();

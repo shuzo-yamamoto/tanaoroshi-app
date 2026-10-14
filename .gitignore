@@ -35,3 +35,6 @@ node_modules/
 
 # 注意: 秘密情報（GAS URL・token）は設計上コードに含めない。
 #       端末側の localStorage / スプレッドシートの settings シートで管理する。
+
+# ── 負荷テストの結果（tools/loadtest-sync.mjs の出力。コミットしない） ──
+tools/out/

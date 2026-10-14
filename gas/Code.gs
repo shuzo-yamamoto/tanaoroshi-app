@@ -13,6 +13,8 @@
  *   2-2. エディタで setupProductMaster() を1回実行(シート「商品マスタ」を用意)
  *   (v1.4.0へ更新するとき) 貼り直し→デプロイを管理→新しいバージョン。その後 setupDataSheetHeaders() を
  *        実行すると既存の棚卸データシートに K1〜N1 の見出しが入る(任意。提出時にも自動で補う)
+ *   (v1.5.0へ更新したあと) inspectPriceColumns() を実行し、実行ログの内容を開発者に送る
+ *        (販売価格の税率判定表を、本番マスタの実際の値を見て決めるため。読み取りのみ)
  *   3. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」
  *        次のユーザーとして実行: 自分
  *        アクセスできるユーザー: 全員
@@ -43,6 +45,17 @@ var HEADERS_JAN = ['商品コード', 'JAN', 'jan', 'バーコード'];
 var HEADERS_NAME = ['商品名', '品名'];
 var HEADERS_COST = ['原価', '仕入原価', '仕入価格', '仕入単価'];
 
+// 販売価格の表示用(v1.5.0。README設計判断#28)。**完全一致だけで探す**。
+// 部分一致にすると「税区分」が「免税区分」に、「税設定」が「部門の税設定を使用」に、
+// 「価格」が「オープン価格」に一致してしまうため。見つからなければその項目を返さない(同期は止めない)。
+var HEADERS_EXACT = {
+  sell: ['商品単価'],
+  taxDiv: ['税区分'],
+  taxSet: ['税設定'],
+  deptTax: ['部門の税設定を使用'],
+  dept: ['部門ID']
+};
+
 var PRODUCTS_LIMIT_DEFAULT = 2000;
 var PRODUCTS_LIMIT_MAX = 5000;
 
@@ -55,8 +68,9 @@ var HEADER = ['提出日時', '棚卸名', '棚卸ID', '担当者', 'JANコー�
 /** v1.4.0 で追加した列の開始位置(0始まり。K列) */
 var HEADER_EXT_FROM = 10;
 
-// PWAが提出前に確認するAPIの版(README設計判断#23)。K〜N列を書けるのは 2 以上
-var API_VERSION = 2;
+// PWAが提出前に確認するAPIの版(README設計判断#23)。K〜N列を書けるのは 2 以上。
+// 3: getProducts が販売価格の列(sell/taxDiv/taxSet/deptTax/dept)を返す(v1.5.0)
+var API_VERSION = 3;
 
 /** POST受け口 */
 function doPost(e) {
@@ -252,7 +266,8 @@ function setupProductMaster() {
 /**
  * 商品マスタの取得(ページング)。読み取り専用のためロックは取らない。
  * リクエスト: {token, action:'getProducts', offset, limit}
- * レスポンス: {items:[{jan,name,cost}], total, offset, count}
+ * レスポンス: {items:[{jan,name,cost, sell?,taxDiv?,taxSet?,deptTax?,dept?}], total, offset, count}
+ *   sell〜dept は v1.5.0。見出しが完全一致する列があり、値が空でないときだけ入る
  *   count は「読み進めた行数」で items.length とは一致しない(JAN不正行を除くため)。
  *   呼び出し側は offset を count ずつ進めること。
  */
@@ -273,6 +288,9 @@ function getProducts_(body) {
     var janIdx = findHeader_(header, HEADERS_JAN);
     var nameIdx = findHeader_(header, HEADERS_NAME);
     var costIdx = findHeader_(header, HEADERS_COST);
+    // 販売価格の表示用の列(完全一致。無ければ -1 で、その項目を返さないだけ)
+    var extIdx = {};
+    Object.keys(HEADERS_EXACT).forEach(function (k) { extIdx[k] = findHeaderExact_(header, HEADERS_EXACT[k]); });
     // 位置決め打ちのフォールバックはしない。誤った列を黙って取り込まないため(設計判断#12)
     if (janIdx < 0 || nameIdx < 0) {
       return { success: false, error: '「商品マスタ」1行目の見出しが見つかりません(必要: ' +
@@ -294,14 +312,24 @@ function getProducts_(body) {
     for (var i = 0; i < values.length; i++) {
       var jan = normCode_(values[i][janIdx]);
       if (!/^\d{4,14}$/.test(jan)) continue; // JANとして不正な行はスキップ(PWAのCSV取込と同じ判定)
-      items.push({
+      var item = {
         jan: jan,
         name: String(values[i][nameIdx] == null ? '' : values[i][nameIdx]).trim(),
         cost: costIdx >= 0 ? normCost_(values[i][costIdx]) : ''
+      };
+      // 販売価格の表示用。空の値は送らない(応答を小さくするため。同時同期の負荷対策 — 不具合ログ#4)
+      if (extIdx.sell >= 0) { var sv = normCost_(values[i][extIdx.sell]); if (sv !== '') item.sell = sv; }
+      ['taxDiv', 'taxSet', 'deptTax', 'dept'].forEach(function (k) {
+        if (extIdx[k] < 0) return;
+        var v = normCode_(values[i][extIdx[k]]);
+        if (v !== '') item[k] = v;
       });
+      items.push(item);
     }
 
-    if (offset === 0) appendLog_('getProducts', '商品マスタ同期(全 ' + total + ' 行)');
+    // 同時に同期すると opsLog の書き込みが競合して消えるため、短時間だけロックを試みる。
+    // 取れなければ記録だけ諦める(同期は止めない — 設計判断#26)
+    if (offset === 0) appendLogIfFree_('getProducts', '商品マスタ同期(全 ' + total + ' 行)', 1000);
     return { success: true, data: { items: items, total: total, offset: offset, count: count } };
   } catch (err) {
     return { success: false, error: '商品マスタを読み取れませんでした: ' + err.message };
@@ -318,6 +346,76 @@ function findHeader_(header, candidates) {
     }
   }
   return -1;
+}
+
+/** 見出し行から、候補と完全一致する最初の列位置を返す(前後の空白は無視。見つからなければ -1) */
+function findHeaderExact_(header, candidates) {
+  for (var j = 0; j < candidates.length; j++) {
+    for (var i = 0; i < header.length; i++) {
+      if (String(header[i] == null ? '' : header[i]).trim() === candidates[j]) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 本番の商品マスタで、税区分・税設定・部門の税設定を使用・部門ID の組み合わせと件数、
+ * 例となる商品を実行ログに出す(読み取り専用。エディタから手動で実行 — README設計判断#28)。
+ * 税率の判定表(app.js の PRICE_CONFIG.taxRateRules)を、実際の値を見てから決めるために使う。
+ */
+function inspectPriceColumns() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PRODUCTS);
+  if (!sheet || sheet.getLastRow() < 2) throw new Error('シート「' + SHEET_PRODUCTS + '」にデータがありません。');
+  var values = sheet.getDataRange().getValues();
+  var header = values[0];
+  var idx = {
+    jan: findHeader_(header, HEADERS_JAN), name: findHeader_(header, HEADERS_NAME),
+    sell: findHeaderExact_(header, HEADERS_EXACT.sell), taxDiv: findHeaderExact_(header, HEADERS_EXACT.taxDiv),
+    taxSet: findHeaderExact_(header, HEADERS_EXACT.taxSet), deptTax: findHeaderExact_(header, HEADERS_EXACT.deptTax),
+    dept: findHeaderExact_(header, HEADERS_EXACT.dept)
+  };
+  var lines = ['■ 見出しの位置(列名・見つからなければ「なし」)'];
+  Object.keys(idx).forEach(function (k) { lines.push('  ' + k + ': ' + (idx[k] >= 0 ? colLetter_(idx[k]) + '列「' + header[idx[k]] + '」' : 'なし')); });
+
+  var cell = function (row, k) { return idx[k] < 0 ? '(列なし)' : (normCode_(row[idx[k]]) === '' ? '(空欄)' : normCode_(row[idx[k]])); };
+  var combos = {}, depts = {};
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    var key = '税区分=' + cell(row, 'taxDiv') + ' / 税設定=' + cell(row, 'taxSet') + ' / 部門の税設定を使用=' + cell(row, 'deptTax');
+    var c = combos[key] || (combos[key] = { n: 0, ex: [] });
+    c.n++;
+    if (c.ex.length < 3) c.ex.push(normCode_(row[idx.jan]) + ' ' + String(row[idx.name]).slice(0, 20) + ' 単価' + cell(row, 'sell'));
+    // 税設定が空欄で部門の設定に従う商品は、部門ごとに税率が違う可能性があるので部門別にも数える
+    if (cell(row, 'taxSet') === '(空欄)') {
+      var dk = '部門ID=' + cell(row, 'dept') + ' / 部門の税設定を使用=' + cell(row, 'deptTax');
+      var d = depts[dk] || (depts[dk] = { n: 0, ex: '' });
+      d.n++;
+      if (!d.ex) d.ex = normCode_(row[idx.jan]) + ' ' + String(row[idx.name]).slice(0, 20) + ' 単価' + cell(row, 'sell');
+    }
+  }
+  lines.push('', '■ 税区分・税設定・部門の税設定を使用 の組み合わせ(全 ' + (values.length - 1) + ' 行)');
+  Object.keys(combos).sort(function (a, b) { return combos[b].n - combos[a].n; }).forEach(function (k) {
+    lines.push('  ' + combos[k].n + '件  ' + k, '      例: ' + combos[k].ex.join(' ／ '));
+  });
+  lines.push('', '■ 税設定が空欄の商品の部門別内訳(部門ごとに1商品ずつ値札を確認してください)');
+  Object.keys(depts).sort(function (a, b) { return depts[b].n - depts[a].n; }).forEach(function (k) {
+    lines.push('  ' + depts[k].n + '件  ' + k + '   例: ' + depts[k].ex);
+  });
+  var msg = lines.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** ロックが空いていればopsLogに書く。待つのは最大 waitMs まで。取れなければ記録を省いて false */
+function appendLogIfFree_(op, detail, waitMs) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(waitMs)) return false;
+  try {
+    appendLog_(op, detail);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** JAN等のコード値を文字列化。数値セルでも指数表記・小数点が付かないようにする */
