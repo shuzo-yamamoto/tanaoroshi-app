@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -49,17 +49,19 @@ const SYNC_RETRY_BASE_MS = 1000;
  */
 const PRICE_CONFIG = {
   // スマレジ「税区分」→ 商品単価の扱い('excl'=税抜 / 'incl'=税込 / 'exempt'=非課税)。
-  // 1=税抜: 2026-10確認(4900669031062 商品単価400円・値札440円)。ここに無い値は「税区分不明」と表示
-  taxDiv: { '1': 'excl' },
+  // 2026-10確認(設計判断#29)。ここに無い値は「税区分不明」と表示
+  taxDiv: { '0': 'incl', '1': 'excl', '2': 'exempt' },
   // 税率の判定表。上から順に、match の項目がすべて一致した最初の行の rate を使う。
   // 項目: taxSet(税設定) / deptTax(部門の税設定を使用) / dept(部門ID) / taxDiv(税区分)。空欄は ''。
-  // どれにも当てはまらなければ「税率不明」(推測で10%にしない)。
-  // 空欄の税設定の扱いは、GASの inspectPriceColumns() で本番の値を調べてから足す
+  // 値に配列を書くと「どれかに一致」。どれにも当てはまらなければ「税率不明」(推測で10%にしない)
   taxRateRules: [
-    { match: { taxSet: '10000001' }, rate: 8 }   // 軽減税率(2026-10 ユーザー確認)
+    { match: { taxSet: '10000001' }, rate: 8 },   // 軽減税率(商品ごとの設定)
+    // 部門の税設定に従う商品: 食料品の部門(スマレジで8%の部門)。部門コード＝部門IDを本番マスタで照合済み(#29)
+    { match: { taxSet: '', deptTax: '1', dept: ['515', '516', '517', '518', '519'] }, rate: 8 },
+    { match: { taxSet: '', deptTax: '1' }, rate: 10 }   // 部門の税設定に従う、食料品以外の部門
   ],
   // 税抜→税込の端数処理: 'floor'(切り捨て) / 'round'(四捨五入) / 'ceil'(切り上げ)。
-  // スマレジの設定を確認中のため仮に切り捨て
+  // スマレジの設定に合わせて切り捨て(2026-10 ユーザー確認)
   rounding: 'floor'
 };
 
@@ -278,7 +280,11 @@ function taxIncluded(excl, ratePct, mode = PRICE_CONFIG.rounding) {
 /** 判定表で税率を決める。当てはまらなければ null(=税率不明。推測で10%にしない) */
 function taxRateOf(p) {
   for (const rule of PRICE_CONFIG.taxRateRules) {
-    const ok = Object.keys(rule.match).every(k => String(p[k] == null ? '' : p[k]).trim() === rule.match[k]);
+    const ok = Object.keys(rule.match).every(k => {
+      const v = String(p[k] == null ? '' : p[k]).trim();
+      const want = rule.match[k];
+      return Array.isArray(want) ? want.includes(v) : v === want;
+    });
     if (ok) return rule.rate;
   }
   return null;
@@ -296,13 +302,16 @@ function sellDisplayOf(p) {
   const y = (n) => '¥' + n.toLocaleString('ja-JP');
   // 個別登録で値札の税込価格を入れた商品
   if (p.sellIncl === '1') return { main: `売価 ${y(v)}（税込）`, sub: '' };
+  // 商品単価0円は部門打ち用のコード等で、売価はPOSで設定する(設計判断#29)
+  if (v === 0) return { main: '売価はPOSで設定', sub: '商品単価が0円の商品です' };
   const basis = PRICE_CONFIG.taxDiv[String(p.taxDiv == null ? '' : p.taxDiv).trim()];
   const rate = taxRateOf(p);
   if (basis === 'excl') {
-    if (rate == null) return { main: `売価 ${y(v)}（税抜）`, sub: '税率不明のため税込は表示できません' };
+    if (rate == null) return { main: `売価 ${y(v)}（税抜）`, sub: '（税率不明）税込は表示できません' };
     return { main: `売価 ${y(taxIncluded(v, rate))}（税込）`, sub: `税抜 ${y(v)}・税率${rate}%` };
   }
-  if (basis === 'incl') return { main: `売価 ${y(v)}（税込）`, sub: rate == null ? '' : `税抜 ${y(taxExcluded(v, rate))}・税率${rate}%` };
+  // 税込の単価はそのまま表示する。税抜は逆算しない(スマレジの内税計算と端数がずれ得るため)
+  if (basis === 'incl') return { main: `売価 ${y(v)}（税込）`, sub: rate == null ? '（税率不明）' : `税率${rate}%` };
   if (basis === 'exempt') return { main: `売価 ${y(v)}（非課税）`, sub: '' };
   return { main: `売価 ${y(v)}`, sub: '税区分不明のため税込・税抜は判定できません' };
 }

@@ -15,6 +15,8 @@
  *        実行すると既存の棚卸データシートに K1〜N1 の見出しが入る(任意。提出時にも自動で補う)
  *   (v1.5.0へ更新したあと) inspectPriceColumns() を実行し、実行ログの内容を開発者に送る
  *        (販売価格の税率判定表を、本番マスタの実際の値を見て決めるため。読み取りのみ)
+ *   (v1.5.1) inspectPriceColumns() のログを短くしただけ。Webアプリの再デプロイは不要
+ *        (使うときだけ貼り直して保存。スマレジで税率や部門を変えたときの確認用)
  *   3. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」
  *        次のユーザーとして実行: 自分
  *        アクセスできるユーザー: 全員
@@ -377,30 +379,50 @@ function inspectPriceColumns() {
   var lines = ['■ 見出しの位置(列名・見つからなければ「なし」)'];
   Object.keys(idx).forEach(function (k) { lines.push('  ' + k + ': ' + (idx[k] >= 0 ? colLetter_(idx[k]) + '列「' + header[idx[k]] + '」' : 'なし')); });
 
+  // ログが切り詰められないよう、部門別の内訳は件数の多い順に上位だけ出す(v1.5.1)
+  var TOP_DEPTS = 10;
   var cell = function (row, k) { return idx[k] < 0 ? '(列なし)' : (normCode_(row[idx[k]]) === '' ? '(空欄)' : normCode_(row[idx[k]])); };
-  var combos = {}, depts = {};
+  var example = function (row) { return normCode_(row[idx.jan]) + ' ' + String(row[idx.name]).slice(0, 20) + ' 単価' + cell(row, 'sell'); };
+  var combos = {}, reducedDepts = {}, blankDepts = {}, zeroSell = 0;
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
     var key = '税区分=' + cell(row, 'taxDiv') + ' / 税設定=' + cell(row, 'taxSet') + ' / 部門の税設定を使用=' + cell(row, 'deptTax');
     var c = combos[key] || (combos[key] = { n: 0, ex: [] });
     c.n++;
-    if (c.ex.length < 3) c.ex.push(normCode_(row[idx.jan]) + ' ' + String(row[idx.name]).slice(0, 20) + ' 単価' + cell(row, 'sell'));
-    // 税設定が空欄で部門の設定に従う商品は、部門ごとに税率が違う可能性があるので部門別にも数える
+    if (c.ex.length < 2) c.ex.push(example(row));
+    if (cell(row, 'sell') === '0') zeroSell++;
+    // 商品ごとに軽減税率の商品が、どの部門にあるか(app.js の食料品の部門と見比べる)
+    if (cell(row, 'taxSet') === '10000001') {
+      var rk = cell(row, 'dept');
+      var rd = reducedDepts[rk] || (reducedDepts[rk] = { n: 0, ex: example(row) });
+      rd.n++;
+    }
+    // 税設定が空欄の商品は部門の設定に従うので、部門別にも数える
     if (cell(row, 'taxSet') === '(空欄)') {
       var dk = '部門ID=' + cell(row, 'dept') + ' / 部門の税設定を使用=' + cell(row, 'deptTax');
-      var d = depts[dk] || (depts[dk] = { n: 0, ex: '' });
+      var d = blankDepts[dk] || (blankDepts[dk] = { n: 0, ex: example(row) });
       d.n++;
-      if (!d.ex) d.ex = normCode_(row[idx.jan]) + ' ' + String(row[idx.name]).slice(0, 20) + ' 単価' + cell(row, 'sell');
     }
   }
+  var byCount = function (obj) { return Object.keys(obj).sort(function (a, b) { return obj[b].n - obj[a].n; }); };
   lines.push('', '■ 税区分・税設定・部門の税設定を使用 の組み合わせ(全 ' + (values.length - 1) + ' 行)');
-  Object.keys(combos).sort(function (a, b) { return combos[b].n - combos[a].n; }).forEach(function (k) {
+  byCount(combos).forEach(function (k) {
     lines.push('  ' + combos[k].n + '件  ' + k, '      例: ' + combos[k].ex.join(' ／ '));
   });
-  lines.push('', '■ 税設定が空欄の商品の部門別内訳(部門ごとに1商品ずつ値札を確認してください)');
-  Object.keys(depts).sort(function (a, b) { return depts[b].n - depts[a].n; }).forEach(function (k) {
-    lines.push('  ' + depts[k].n + '件  ' + k + '   例: ' + depts[k].ex);
+  lines.push('', '■ 税設定=10000001(軽減税率)の商品の部門ID別件数');
+  byCount(reducedDepts).forEach(function (k) {
+    lines.push('  ' + reducedDepts[k].n + '件  部門ID=' + k + '   例: ' + reducedDepts[k].ex);
   });
+  var blankKeys = byCount(blankDepts);
+  lines.push('', '■ 税設定が空欄の商品の部門別内訳(件数の多い順に上位' + TOP_DEPTS + '件)');
+  blankKeys.slice(0, TOP_DEPTS).forEach(function (k) {
+    lines.push('  ' + blankDepts[k].n + '件  ' + k + '   例: ' + blankDepts[k].ex);
+  });
+  if (blankKeys.length > TOP_DEPTS) {
+    var rest = blankKeys.slice(TOP_DEPTS).reduce(function (s, k) { return s + blankDepts[k].n; }, 0);
+    lines.push('  ほか ' + (blankKeys.length - TOP_DEPTS) + '部門・' + rest + '件');
+  }
+  lines.push('', '■ 商品単価が0円の商品: ' + zeroSell + '件(アプリでは「売価はPOSで設定」と表示)');
   var msg = lines.join('\n');
   Logger.log(msg);
   return msg;
