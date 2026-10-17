@@ -38,3 +38,6 @@ node_modules/
 
 # ── 負荷テストの結果（tools/loadtest-sync.mjs の出力。コミットしない） ──
 tools/out/
+
+# Obsidian の保管庫の設定（端末ごとの設定なのでコミットしない）
+.obsidian/

@@ -1,3 +1,10 @@
+---
+project: tanaoroshi-app
+status: 本番稼働？
+pca_renkei: false
+last_deploy:
+---
+
 # tanaoroshi-app — 画箋堂 棚卸PWA
 
 スマホ(iPhone / **Android両対応**)・PCのブラウザで動く棚卸アプリ。
