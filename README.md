@@ -1,6 +1,6 @@
 ---
 project: tanaoroshi-app
-status: 本番稼働？
+status: 本番稼働
 pca_renkei: false
 last_deploy:
 ---
