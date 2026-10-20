@@ -242,6 +242,18 @@
   <button id="btn-set-save" class="big-btn btn-primary">設定を保存する</button>
   <button id="btn-set-test" class="big-btn btn-ghost">接続テスト</button>
 
+  <!-- 設定リンクの貼り付け（iPhoneのホーム画面のアプリ等、リンクを開いても設定が入らない端末向け。README設計判断#31） -->
+  <button id="btn-paste-link" class="big-btn btn-ghost">📋 設定リンクを貼り付けて設定する</button>
+  <div id="paste-link-box" class="setup-box" hidden>
+    <p class="hint">管理者から受け取った<b>設定リンク</b>（店舗のQRコードのリンク）を下の欄に貼り付けて、「適用する」を押してください。提出先URL・トークン・拠点が入ります（担当者名・棚卸データ・商品マスタはそのまま）。<strong>貼り付けた内容は、押した時点で欄から消えます。</strong></p>
+    <label class="field-label" for="set-paste-link">設定リンク</label>
+    <input id="set-paste-link" class="big-input mono small masked" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ここを長押しして貼り付け">
+    <div class="row">
+      <button id="btn-paste-apply" class="big-btn btn-primary">適用する</button>
+      <button id="btn-paste-cancel" class="big-btn btn-ghost">やめる</button>
+    </div>
+  </div>
+
   <!-- 配布用の設定リンク（管理者が複数端末を設定するとき） -->
   <div id="setup-link-box" class="setup-box" hidden>
     <p class="field-label">配布用の設定リンクを作る</p>

@@ -110,6 +110,8 @@ body{
 
 /* 配布用の設定リンク（README設計判断#17） */
 .setup-box{background:#fff; border:2px solid var(--line); border-radius:var(--radius); padding:14px; margin:12px 0;}
+/* 設定リンクの貼り付け欄は伏せ字にする(トークンを含むため。README設計判断#31) */
+.masked{-webkit-text-security:disc;}
 .setup-link-row{margin:12px 0;}
 .setup-link-row .loc{font-weight:700; margin-bottom:4px;}
 .setup-link-row .link{

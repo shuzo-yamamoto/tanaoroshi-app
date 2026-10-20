@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -199,6 +199,9 @@ let currentView = 'home';
 async function goto(view) {
   // スキャン画面から離れるときはカメラ停止
   if (currentView === 'scan' && view !== 'scan') await Scanner.stop();
+
+  // 貼り付けた設定リンク(トークンを含む)を画面移動で残さない(設計判断#31)
+  clearPastedLink();
 
   $$('.view').forEach(v => { v.hidden = true; });
   const el = $('#view-' + view);
@@ -1067,6 +1070,8 @@ function renderSettings() {
   // 生成済みリンクは設定変更で古くなるため、開き直すたびに畳む
   $('#setup-link-box').hidden = true;
   $('#errlog-box').hidden = true;
+  $('#paste-link-box').hidden = true;
+  clearPastedLink();
   renderErrorLog();
 }
 
@@ -1212,15 +1217,63 @@ function applySetupLink() {
   if (!location.hash) return null;
   const p = new URLSearchParams(location.hash.replace(/^#/, ''));
   if (p.get('setup') !== '1') return null;
+  const loc = applySetupParams(p);
+  // フラグメント除去(トークンを残さない)。search は保持
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  return loc;
+}
+
+/**
+ * 設定リンクの中身(gasUrl・token・loc)を設定に反映する。リンクを開いたときと貼り付けたときで共通。
+ * 提出先URL・トークン・拠点だけを書き換え、担当者名・棚卸データ・マスタには触れない。
+ * strictLoc のときは、拠点が許可リストに無ければ何も変えずに null を返す(貼り付け用 — 設計判断#31)
+ * @returns 反映後の拠点コード(未設定なら '')。断ったときは null
+ */
+function applySetupParams(p, { strictLoc = false } = {}) {
+  const loc = p.get('loc');
+  if (strictLoc && loc && !LOCATION_CODES.includes(loc)) return null;
   const conf = Settings.load();
   if (p.get('gasUrl')) conf.gasUrl = p.get('gasUrl');
   if (p.get('token')) conf.token = p.get('token');
-  const loc = p.get('loc');
   if (loc && LOCATION_CODES.includes(loc)) conf.location = loc;
   Settings.save(conf);
-  // フラグメント除去(トークンを残さない)。search は保持
-  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   return conf.location || '';
+}
+
+/* ── 設定リンクの貼り付け(設計判断#31) ──
+ * iPhoneのホーム画面のアプリは、QR・リンクで開いたSafariと設定を共有しないため(不具合ログ#7)。
+ * 貼り付けた内容はトークンを含むので、欄は伏せ字にし、適用ボタン・画面移動・アプリが裏に回った時点で消す。
+ * 内容はどこにも保存せず、エラーの記録にも残さない */
+
+function clearPastedLink() {
+  const el = $('#set-paste-link');
+  if (el) el.value = '';
+}
+
+function applyPastedLink() {
+  const el = $('#set-paste-link');
+  const raw = el.value.trim();
+  // 成功・失敗にかかわらず、まず欄から消す
+  el.value = '';
+  el.blur();
+  if (!raw) { toast('設定リンクを貼り付けてから「適用する」を押してください。', true); return; }
+  // リンク全体でも「#」以降だけでもよい。前後に余計な文字が付いていても # から後ろを読む
+  const hashAt = raw.indexOf('#');
+  const p = new URLSearchParams(hashAt >= 0 ? raw.slice(hashAt + 1) : raw);
+  if (p.get('setup') !== '1' || !/^https?:\/\/\S+$/.test(p.get('gasUrl') || '') || !p.get('token')) {
+    toast('設定リンクとして読み取れませんでした。管理者から受け取ったリンクを、途中で切らずにそのまま貼り付けてください。', true, 6000);
+    return;
+  }
+  const loc = applySetupParams(p, { strictLoc: true });
+  if (loc === null) {
+    toast('リンクの拠点が正しくありません。管理者に新しいリンクをもらってください（設定は変えていません）。', true, 6000);
+    return;
+  }
+  // クリップボードに残ったリンクを消すことを試みる(端末が許さなければ何もしない)
+  try { navigator.clipboard.writeText('').catch(() => {}); } catch (e) {}
+  renderSettings();
+  toast(loc ? `設定リンクを適用しました（拠点: ${locationLabel(loc)}）。続けて「接続テスト」を押してください。`
+            : '設定リンクを適用しました。続けて「接続テスト」を押してください。', false, 6000);
 }
 
 async function testConnection() {
@@ -1338,6 +1391,16 @@ function init() {
   $('#btn-set-save').addEventListener('click', saveSettings);
   $('#btn-set-test').addEventListener('click', testConnection);
   $('#btn-setup-links').addEventListener('click', renderSetupLinks);
+  // 設定リンクの貼り付け(設計判断#31)
+  $('#btn-paste-link').addEventListener('click', () => {
+    clearPastedLink();
+    $('#paste-link-box').hidden = !$('#paste-link-box').hidden;
+  });
+  $('#btn-paste-apply').addEventListener('click', applyPastedLink);
+  $('#set-paste-link').addEventListener('keydown', e => { if (e.key === 'Enter') applyPastedLink(); });
+  $('#btn-paste-cancel').addEventListener('click', () => { clearPastedLink(); $('#paste-link-box').hidden = true; });
+  // アプリが裏に回ったら(ホームに戻る・別アプリを開く)貼り付け欄を消す
+  document.addEventListener('visibilitychange', () => { if (document.hidden) clearPastedLink(); });
   // エラーの記録(設計判断#25)
   $('#btn-errlog').addEventListener('click', () => {
     renderErrorLog();
