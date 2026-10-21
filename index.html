@@ -231,6 +231,14 @@
 
 <!-- ═══ 設定 ═══ -->
 <section id="view-settings" class="view" hidden>
+  <!-- iPhone・iPadのSafariで設定リンクを開いたときだけ出す(ホーム画面のアプリへ渡すため。README設計判断#32) -->
+  <div id="ios-copy-box" class="setup-box ios-copy-box" hidden>
+    <p class="field-label">ホーム画面のアプリを使っている方へ（iPhone・iPad）</p>
+    <p class="hint">この画面（Safari）には設定が入りました。<b>ホーム画面のアプリ</b>にも設定するには、下のボタンでリンクをコピーしてください。</p>
+    <button id="btn-ios-copy" class="big-btn btn-secondary">📋 ホーム画面のアプリ用に設定リンクをコピー</button>
+    <p id="ios-copy-done" class="hint done" hidden>コピーしました。<b>ホーム画面のアプリ</b>を開き、「設定」→「📋 設定リンクを貼り付けて設定する」に貼り付けてください。</p>
+  </div>
+
   <label class="field-label" for="set-staff">担当者名（提出データに記録されます）</label>
   <input id="set-staff" class="big-input" type="text" placeholder="山本">
   <label class="field-label" for="set-location">拠点（提出先の店舗）</label>
@@ -238,7 +246,10 @@
   <label class="field-label" for="set-gas">提出先URL（GAS WebアプリのURL）</label>
   <input id="set-gas" class="big-input mono small" type="url" placeholder="https://script.google.com/macros/s/…/exec">
   <label class="field-label" for="set-token">提出用トークン</label>
-  <input id="set-token" class="big-input mono" type="text" placeholder="設定シートと同じ値">
+  <div class="row token-row">
+    <input id="set-token" class="big-input mono masked" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="設定シートと同じ値">
+    <button id="btn-token-show" class="big-btn btn-ghost token-show" type="button" aria-pressed="false">表示</button>
+  </div>
   <button id="btn-set-save" class="big-btn btn-primary">設定を保存する</button>
   <button id="btn-set-test" class="big-btn btn-ghost">接続テスト</button>
 

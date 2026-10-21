@@ -112,6 +112,13 @@ body{
 .setup-box{background:#fff; border:2px solid var(--line); border-radius:var(--radius); padding:14px; margin:12px 0;}
 /* 設定リンクの貼り付け欄は伏せ字にする(トークンを含むため。README設計判断#31) */
 .masked{-webkit-text-security:disc;}
+/* 提出用トークン欄と「表示」ボタン(README設計判断#33) */
+.token-row{align-items:stretch;}
+.token-row .big-input{flex:1; min-width:0;}
+.row>.big-btn.token-show{flex:0 0 auto; width:auto; min-height:56px; padding:0 18px; font-size:15px;}
+/* iPhone・iPadのSafariで設定リンクを開いたときの案内(README設計判断#32) */
+.ios-copy-box{border-color:var(--ai);}
+.ios-copy-box .done{font-weight:700; color:var(--wakaba);}
 .setup-link-row{margin:12px 0;}
 .setup-link-row .loc{font-weight:700; margin-bottom:4px;}
 .setup-link-row .link{

@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -202,6 +202,9 @@ async function goto(view) {
 
   // 貼り付けた設定リンク(トークンを含む)を画面移動で残さない(設計判断#31)
   clearPastedLink();
+  // トークン欄は伏せ字に戻す(#33)。設定画面を離れたら、ホーム画面のアプリ用のリンクも捨てる(#32)
+  setTokenVisible(false);
+  if (currentView === 'settings' && view !== 'settings') pendingSetupLink = null;
 
   $$('.view').forEach(v => { v.hidden = true; });
   const el = $('#view-' + view);
@@ -1072,6 +1075,8 @@ function renderSettings() {
   $('#errlog-box').hidden = true;
   $('#paste-link-box').hidden = true;
   clearPastedLink();
+  setTokenVisible(false);
+  renderIosCopyBox();
   renderErrorLog();
 }
 
@@ -1217,6 +1222,8 @@ function applySetupLink() {
   if (!location.hash) return null;
   const p = new URLSearchParams(location.hash.replace(/^#/, ''));
   if (p.get('setup') !== '1') return null;
+  // iPhone・iPadのSafariでは、ホーム画面のアプリへ渡すために、この画面の間だけメモリに持つ(設計判断#32)
+  pendingSetupLink = isAppleMobileBrowser() ? location.origin + location.pathname + location.hash : null;
   const loc = applySetupParams(p);
   // フラグメント除去(トークンを残さない)。search は保持
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
@@ -1238,6 +1245,75 @@ function applySetupParams(p, { strictLoc = false } = {}) {
   if (loc && LOCATION_CODES.includes(loc)) conf.location = loc;
   Settings.save(conf);
   return conf.location || '';
+}
+
+/* ── iPhone・iPadのSafariからホーム画面のアプリへ設定リンクを渡す(設計判断#32) ──
+ * iPhone・iPadでは、QRで開いたSafariとホーム画面のアプリが設定を共有しない(不具合ログ#7)。
+ * 設定リンクで開いたときだけ、リンクをメモリに持ち、1回だけコピーできるようにする。
+ * コピーした時点・設定画面を離れた時点・アプリが裏に回った時点で捨てる(保存はしない) */
+
+let pendingSetupLink = null;
+
+/**
+ * iPhone・iPad(iPod含む)のブラウザで、ホーム画面のアプリとして開いていないか。
+ * iPadのSafariは既定でMacとして振る舞う(ユーザーエージェントが Macintosh)ため、
+ * MacIntel かつタッチ点数2以上もiPadとみなす(Macはタッチ点数0)。
+ * 引数は判定の検証用で、省略時は実際の navigator と display-mode を使う
+ */
+function isAppleMobileBrowser(nav = navigator,
+                              standaloneMode = !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
+  const ua = nav.userAgent || '';
+  const apple = /iPhone|iPad|iPod/.test(ua) || (nav.platform === 'MacIntel' && (nav.maxTouchPoints || 0) > 1);
+  const standalone = nav.standalone === true || standaloneMode === true;
+  return apple && !standalone;
+}
+
+/** 設定画面の案内の出し入れ。リンクを持っている間だけ出す */
+function renderIosCopyBox() {
+  $('#ios-copy-box').hidden = !pendingSetupLink;
+  $('#btn-ios-copy').hidden = false;
+  $('#ios-copy-done').hidden = true;
+}
+
+/** 文字をクリップボードへ(navigator.clipboard が使えない環境の予備。一時的な欄はすぐ消す) */
+function copyByTextarea(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.readOnly = true;
+  ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;';
+  document.body.appendChild(ta);
+  let ok = false;
+  try { ta.focus(); ta.setSelectionRange(0, text.length); ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+async function copyIosSetupLink() {
+  if (!pendingSetupLink) {
+    $('#ios-copy-box').hidden = true;
+    toast('もう一度、店舗のQRコードを読み取ってから押してください。', true, 4500);
+    return;
+  }
+  const link = pendingSetupLink;
+  let ok = false;
+  try { await navigator.clipboard.writeText(link); ok = true; }
+  catch (e) { ok = copyByTextarea(link); }
+  if (!ok) { toast('コピーできませんでした。もう一度押してください。', true, 4000); return; }
+  pendingSetupLink = null;
+  $('#btn-ios-copy').hidden = true;
+  $('#ios-copy-done').hidden = false;
+}
+
+/* ── 提出用トークン欄の伏せ字(設計判断#33) ── */
+
+/** show=true で平文、false で伏せ字。画面を開き直す・移る・裏に回ると伏せ字に戻す */
+function setTokenVisible(show) {
+  const el = $('#set-token');
+  const b = $('#btn-token-show');
+  if (!el || !b) return;
+  el.classList.toggle('masked', !show);
+  b.textContent = show ? '隠す' : '表示';
+  b.setAttribute('aria-pressed', show ? 'true' : 'false');
 }
 
 /* ── 設定リンクの貼り付け(設計判断#31) ──
@@ -1399,8 +1475,18 @@ function init() {
   $('#btn-paste-apply').addEventListener('click', applyPastedLink);
   $('#set-paste-link').addEventListener('keydown', e => { if (e.key === 'Enter') applyPastedLink(); });
   $('#btn-paste-cancel').addEventListener('click', () => { clearPastedLink(); $('#paste-link-box').hidden = true; });
-  // アプリが裏に回ったら(ホームに戻る・別アプリを開く)貼り付け欄を消す
-  document.addEventListener('visibilitychange', () => { if (document.hidden) clearPastedLink(); });
+  // iPhone・iPadのSafariからホーム画面のアプリへ(設計判断#32)
+  $('#btn-ios-copy').addEventListener('click', copyIosSetupLink);
+  // 提出用トークン欄の「表示」(設計判断#33)
+  $('#btn-token-show').addEventListener('click', () => setTokenVisible($('#set-token').classList.contains('masked')));
+  // アプリが裏に回ったら(ホームに戻る・別アプリを開く)、貼り付け欄を消し、トークン欄を伏せ字に戻し、
+  // ホーム画面のアプリ用のリンクも捨てる(押す前に裏に回ったら、QRを読み直してもらう)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    clearPastedLink();
+    setTokenVisible(false);
+    pendingSetupLink = null;
+  });
   // エラーの記録(設計判断#25)
   $('#btn-errlog').addEventListener('click', () => {
     renderErrorLog();

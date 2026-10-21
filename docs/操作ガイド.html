@@ -69,6 +69,7 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
 .m .btn{ border-radius:8px; padding:8px 6px; text-align:center; font-weight:bold; color:#fff; font-size:8.4pt; margin-top:7px; }
 .b-shu{ background:var(--shu); } .b-ai{ background:var(--ai); } .b-wakaba{ background:var(--wakaba); }
 .b-ghost{ background:#fff; color:var(--sumi); border:1.5px solid var(--line); }
+.m .btn.b-ghost{ color:var(--sumi); }  /* .m .btn の白文字より優先する（白地に白文字にならないように） */
 .b-yamabuki{ background:var(--yamabuki); }
 
 /* モード選択タイル */
@@ -514,22 +515,22 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
 
   <div class="qr-note">
     <b>※ QRの読み取りは最初の1回だけでOKです。</b>次回からはホーム画面の<b>アプリのアイコン</b>から開けます。
-    <b>iPhoneでホーム画面のアプリを使っている方は、次のページの方法で設定します。</b>
+    <b>iPhone・iPadでホーム画面のアプリを使っている方は、次のページの方法で設定します。</b>
     <div class="qr-caution">▲ このQRコードには店舗の設定情報が含まれます。店内での使用にとどめ、外部には共有しないでください。</div>
   </div>
 
   <div class="foot">画箋堂 棚卸アプリ 使い方ガイド ／ この用紙は各店舗で掲示・保管してください</div>
 </section>
 
-<!-- ═══════════════ ページ6：iPhoneのホーム画面のアプリで設定する（v1.5.2〜。README設計判断#31） ═══════════════ -->
+<!-- ═══════════════ ページ6：iPhone・iPadのホーム画面のアプリで設定する（v1.5.3〜。README設計判断#31・#32） ═══════════════ -->
 <section class="page">
   <div class="title-band" style="border-top-color:var(--ai);">
-    <h1>iPhoneのホーム画面のアプリで設定する</h1>
-    <div class="subtitle">— QRで開いても設定が入らないときは、リンクを「貼り付け」て設定します —</div>
+    <h1>iPhone・iPadのホーム画面のアプリで設定する</h1>
+    <div class="subtitle">— QRで開いたSafariから、リンクをコピーしてアプリに「貼り付け」ます —</div>
   </div>
 
   <p class="lead">
-    iPhoneでは、<b>ホーム画面のアプリ</b>とQRで開く<b>Safari</b>が別々に設定を持つため、<b>QRのリンクをコピーしてアプリに貼り付け</b>ます。わからないときは<b>店舗の管理者と一緒に</b>行ってください。
+    iPhone・iPadでは、QRを読むだけでは<b>ホーム画面のアプリ</b>に設定が入りません。下の4つで設定します（わからないときは<b>店舗の管理者と一緒に</b>）。
   </p>
 
   <div class="sec-h">■ 設定のしかた（4つ）</div>
@@ -537,22 +538,23 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
   <div class="step">
     <div class="num">1</div>
     <div class="txt">
-      <b>前のページの【自分の店舗】のQRを、カメラで写します。</b>
-      <span class="note">出てきたリンクの表示を<b>長押し</b>→「<b>リンクをコピー</b>」（<b>開かない</b>）。できないときは、店舗の管理者から<b>社内チャット</b>でリンクを受け取り、長押ししてコピーします。</span>
+      <b>前のページの【自分の店舗】のQRをカメラで写し、出てきた黄色の表示をタップしてSafariで開きます。</b>
+      <span class="note">「初期設定が完了しました」と出たら、<b>そのまま2へ</b>。</span>
     </div>
   </div>
 
   <div class="step">
     <div class="num">2</div>
     <div class="txt">
-      <b>ホーム画面のアプリのアイコンから開き、下の「設定」→「📋 設定リンクを貼り付けて設定する」をタップします。</b>
+      <b>開いた画面のいちばん上の「📋 ホーム画面のアプリ用に設定リンクをコピー」をタップします。</b>
+      <span class="note">「コピーしました」と出ればOK。<b>押す前に別のアプリに切り替えたら、1から</b>やり直します。</span>
     </div>
     <div class="shot">
       <div class="m">
         <div class="bar"><span>設定</span><span class="pill on">オンライン</span></div>
         <div class="body">
-          <div class="btn b-ghost">接続テスト</div>
-          <div class="btn b-ghost hi">📋 設定リンクを貼り付けて設定する</div>
+          <div class="lbl">ホーム画面のアプリを使っている方へ</div>
+          <div class="btn b-ai hi">📋 ホーム画面のアプリ用に設定リンクをコピー</div>
         </div>
       </div>
     </div>
@@ -561,8 +563,8 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
   <div class="step">
     <div class="num">3</div>
     <div class="txt">
-      <b>「設定リンク」の欄を長押しして「ペースト」し、「適用する」をタップします。</b>
-      <span class="note">欄は●●●で表示されます（中身は見えなくて大丈夫です）。「ペーストを許可」と出たら「許可」をタップします。</span>
+      <b>ホーム画面のアプリを開き、「設定」→「📋 設定リンクを貼り付けて設定する」→ 欄を長押しして「ペースト」→「適用する」。</b>
+      <span class="note">欄は●●●で表示されます。「ペーストを許可」と出たら「許可」。</span>
     </div>
     <div class="shot">
       <div class="m">
@@ -580,7 +582,7 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
     <div class="num">4</div>
     <div class="txt">
       <b>「設定リンクを適用しました」と出たら、「接続テスト」をタップします。</b>
-      <span class="note">「<b>接続OK</b>」で完了です（担当者名・これまでの棚卸データはそのまま）。「読み取れませんでした」と出たら、リンクを<b>途中で切らずに</b>コピーし直して3から。</span>
+      <span class="note">「<b>接続OK</b>」で完了（担当者名・棚卸データはそのまま）。「読み取れませんでした」なら1から。</span>
     </div>
     <div class="shot">
       <div class="m">
@@ -595,8 +597,7 @@ h1{ font-size:26pt; margin:0; color:var(--sumi); letter-spacing:.02em; }
 
   <div class="qr-note">
     <b>※ このリンクには店舗の設定情報が含まれます。</b>
-    LINE・メール・グループのチャットなど、<b>ほかの人が見られる場所には貼らないでください</b>。画面の写真も撮らないでください。<br>
-    社内チャットで受け取ったときは、設定が終わったら<b>そのメッセージを削除</b>してください。
+    ホーム画面のアプリに貼り付けるだけにし、<b>LINE・メール・グループのチャットには貼らず</b>、写真も撮らないでください。うまくいかないときは店舗の管理者に相談してください。
   </div>
 
   <div class="foot">画箋堂 棚卸アプリ 使い方ガイド ／ この用紙は各店舗で掲示・保管してください</div>

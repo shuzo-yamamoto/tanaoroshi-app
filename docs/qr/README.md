@@ -29,10 +29,14 @@ PCの中で作れるQR作成ツール（例：Chromeの「QRコードを作成�
 
 ## 印刷用PDFの作り方（ローカル）
 
-4枚の画像をこのフォルダに置いたあと、リポジトリ直下で:
+4枚の画像をこのフォルダに置いたあと、**PDFを開いているアプリ(Acrobat・ブラウザ等)をすべて閉じてから**、リポジトリ直下の Git Bash で:
 
 ```bash
-"/c/Program Files/Google/Chrome/Application/chrome.exe" --headless --disable-gpu --no-pdf-header-footer --print-to-pdf="docs/操作ガイド_印刷用.pdf" "docs/操作ガイド.html"
+"/c/Program Files/Google/Chrome/Application/chrome.exe" --headless --disable-gpu --no-pdf-header-footer --print-to-pdf="$(pwd -W)/docs/操作ガイド_印刷用.pdf" "$(pwd -W)/docs/操作ガイド.html"
 ```
+
+- 入力・出力とも**絶対パス**で渡す(`$(pwd -W)` が `C:/Users/…` に置き換わる)。相対パスだと、Chrome が `docs` をホスト名と読んで「ERR_NAME_NOT_RESOLVED」になったり、「指定されたパスが見つかりません」で書き込めなかったりする(2026-10-21 確認)
+- 「別のプロセスが使用中です」と出たら、PDFを開いているアプリを閉じてやり直す
+- 「… bytes written to file …」と出れば成功。v1.5.3 以降は **6ページ**(6ページ目は iPhone・iPad の設定のしかた)
 
 生成された `docs/操作ガイド_印刷用.pdf` を印刷して各店舗に掲示してください（PDFはコミットされません）。
