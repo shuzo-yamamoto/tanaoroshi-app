@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.5.4';
 
 /**
  * 拠点(店舗)。code は内部識別子で、提出時に gas/Code.gs が「棚卸データ_<code>」へ振り分ける(設計判断#16)。
@@ -146,7 +146,7 @@ const ErrorLog = (() => {
     mem = arr;
     try { localStorage.setItem(KEY, JSON.stringify(arr)); } catch (e) { /* メモリ保持のみ */ }
   }
-  /** @param {{kind:string, level?:'error'|'warn', message:string, detail?:object}} ev */
+  /** @param {{kind:string, level?:'error'|'warn'|'info', message:string, detail?:object}} ev  info=記録(失敗ではない出来事。設計判断#34) */
   function add(ev) {
     const entry = {
       at: new Date().toISOString(), kind: ev.kind, level: ev.level || 'error',
@@ -1074,6 +1074,7 @@ function renderSettings() {
   $('#setup-link-box').hidden = true;
   $('#errlog-box').hidden = true;
   $('#paste-link-box').hidden = true;
+  $('#clip-clear-box').hidden = true;
   clearPastedLink();
   setTokenVisible(false);
   renderIosCopyBox();
@@ -1102,6 +1103,11 @@ function errDetailText(ev) {
   return parts.join('・');
 }
 
+/** 記録の区分の表示名(info=記録 / warn=注意 / それ以外=失敗) */
+function errLevelLabel(ev) {
+  return ev.level === 'info' ? '記録' : ev.level === 'warn' ? '注意' : '失敗';
+}
+
 function renderErrorLog() {
   const list = ErrorLog.list();
   $('#errlog-count').textContent = list.length;
@@ -1110,10 +1116,10 @@ function renderErrorLog() {
   $('#errlog-empty').hidden = list.length > 0;
   for (const ev of list) {
     const li = document.createElement('li');
-    li.className = ev.level === 'warn' ? 'warn' : 'err';
+    li.className = ev.level === 'warn' ? 'warn' : ev.level === 'info' ? 'info' : 'err';
     li.innerHTML = '<div class="errlog-head"></div><div class="errlog-msg"></div><div class="errlog-detail"></div>';
     li.querySelector('.errlog-head').textContent =
-      `${fmtDateSec(ev.at)}　${ev.kind}　${ev.level === 'warn' ? '注意' : '失敗'}${ev.online ? '' : '(オフライン)'}`;
+      `${fmtDateSec(ev.at)}　${ev.kind}　${errLevelLabel(ev)}${ev.online ? '' : '(オフライン)'}`;
     li.querySelector('.errlog-msg').textContent = ev.message;
     li.querySelector('.errlog-detail').textContent = errDetailText(ev);
     ul.appendChild(li);
@@ -1130,7 +1136,7 @@ function errorLogText() {
     ''
   ];
   const rows = ErrorLog.list().map(ev =>
-    `[${fmtDateSec(ev.at)}] ${ev.kind} ${ev.level === 'warn' ? '注意' : '失敗'} v${ev.ver}${ev.online ? '' : ' オフライン'}\n  ${ev.message}` +
+    `[${fmtDateSec(ev.at)}] ${ev.kind} ${errLevelLabel(ev)} v${ev.ver}${ev.online ? '' : ' オフライン'}\n  ${ev.message}` +
     (errDetailText(ev) ? `\n  ${errDetailText(ev)}` : ''));
   return head.concat(rows.length ? rows : ['(記録はありません)']).join('\n');
 }
@@ -1345,11 +1351,56 @@ function applyPastedLink() {
     toast('リンクの拠点が正しくありません。管理者に新しいリンクをもらってください（設定は変えていません）。', true, 6000);
     return;
   }
-  // クリップボードに残ったリンクを消すことを試みる(端末が許さなければ何もしない)
-  try { navigator.clipboard.writeText('').catch(() => {}); } catch (e) {}
+  // クリップボードに残ったリンクを決まった文言で上書きする(設計判断#34)。
+  // タップの処理の中で、待ちを挟まずに書き込む。拒否されたら「クリップボードを消す」ボタンを出す
+  const cleared = overwriteClipboard('設定リンクの適用');
   renderSettings();
   toast(loc ? `設定リンクを適用しました（拠点: ${locationLabel(loc)}）。続けて「接続テスト」を押してください。`
             : '設定リンクを適用しました。続けて「接続テスト」を押してください。', false, 6000);
+  cleared.then(ok => { if (!ok) $('#clip-clear-box').hidden = false; });
+}
+
+/* ── 設定リンクを適用した後のクリップボードの上書き(設計判断#34・不具合ログ#8) ── */
+
+/** 上書きに使う決まった文言(秘密を含まない)。js/diag.js の「クリップボード試験」の文言と合わせる */
+const CLIPBOARD_CLEAR_TEXT = '（棚卸アプリ：設定リンクは消去しました）';
+
+/**
+ * クリップボードを決まった文言で上書きし、結果を「エラーの記録」に残す(クリップボードの中身は残さない)。
+ * iPhoneでユーザー操作の扱いを外れないよう、タップの処理の中で、待ちを挟まずに呼ぶこと
+ * @param {string} via どこから呼んだか(記録用)
+ * @returns {Promise<boolean>} 書き込みが成功と返ったら true
+ */
+function overwriteClipboard(via) {
+  let p;
+  try {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+      const e = new Error('この端末ではクリップボードに書き込めません'); e.name = 'NotSupported'; throw e;
+    }
+    p = navigator.clipboard.writeText(CLIPBOARD_CLEAR_TEXT);
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  return p.then(() => {
+    ErrorLog.add({ kind: 'クリップボード', level: 'info', message: `上書き：成功と報告（${via}）` });
+    renderErrorLog();
+    return true;
+  }, (e) => {
+    ErrorLog.add({ kind: 'クリップボード', level: 'warn', message: `上書き：失敗（${(e && e.name) || 'Error'}）（${via}）` });
+    renderErrorLog();
+    return false;
+  });
+}
+
+function clearClipboardByButton() {
+  overwriteClipboard('「クリップボードを消す」ボタン').then(ok => {
+    if (ok) {
+      $('#clip-clear-box').hidden = true;
+      toast('クリップボードを上書きしました。メモアプリなどに貼り付けて、リンクでないことを確かめてください。', false, 5000);
+    } else {
+      toast('上書きできませんでした。「担当者名」の欄を長押し →「すべてを選択」→「コピー」で上書きしてください。', true, 7000);
+    }
+  });
 }
 
 async function testConnection() {
@@ -1477,6 +1528,8 @@ function init() {
   $('#btn-paste-cancel').addEventListener('click', () => { clearPastedLink(); $('#paste-link-box').hidden = true; });
   // iPhone・iPadのSafariからホーム画面のアプリへ(設計判断#32)
   $('#btn-ios-copy').addEventListener('click', copyIosSetupLink);
+  // 上書きが拒否されたときの「クリップボードを消す」(設計判断#34)
+  $('#btn-clip-clear').addEventListener('click', clearClipboardByButton);
   // 提出用トークン欄の「表示」(設計判断#33)
   $('#btn-token-show').addEventListener('click', () => setTokenVisible($('#set-token').classList.contains('masked')));
   // アプリが裏に回ったら(ホームに戻る・別アプリを開く)、貼り付け欄を消し、トークン欄を伏せ字に戻し、

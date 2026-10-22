@@ -133,6 +133,9 @@ body{
 .errlog-list{list-style:none; margin:8px 0; padding:0; display:flex; flex-direction:column; gap:8px;}
 .errlog-list li{border-left:5px solid #C0392B; background:#FBFAF6; border-radius:8px; padding:8px 10px; font-size:13px;}
 .errlog-list li.warn{border-left-color:var(--yamabuki);}
+.errlog-list li.info{border-left-color:var(--ai);}
+/* クリップボードの上書きが拒否されたときの案内(README設計判断#34) */
+.clip-clear-box{border-color:var(--yamabuki);}
 .errlog-head{font-weight:700; font-size:12px; color:#555;}
 .errlog-msg{margin-top:2px; word-break:break-all;}
 .errlog-detail{margin-top:2px; font-size:12px; color:#777; word-break:break-all;}

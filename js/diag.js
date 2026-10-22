@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const DIAG_VERSION = '1.5.0';
+const DIAG_VERSION = '1.5.4';
 const APP = { intervalMs: 200, width: 1920, height: 1080, confirmCount: 2 };   // scanner.js と同じ
 const SETTLE_MS = 1500;   // 起動直後はピント・露出が落ち着くまで待ってから計測する
 
@@ -358,6 +358,48 @@ function takeShot() {
   $('#shots').prepend(box);
 }
 
+/* ───────── クリップボード試験(README設計判断#34・不具合ログ#8) ─────────
+ * 設定リンクを適用した後にクリップボードが空にならなかった件(U-5)の原因を切り分ける。
+ * ダミーの文字だけを使う。空の文字列・空白1文字・決まった文言の3通りで上書きを試し、
+ * 書き込みの成否(成功と報告/失敗:エラー名)を画面に出す。メモアプリに貼って中身を見るのは人が行う。
+ * 書き込みは、タップの処理の中で待ちを挟まずに行う(アプリ本体と同じ条件) */
+
+const CB_TEXT = '（棚卸アプリ：設定リンクは消去しました）';   // js/app.js の CLIPBOARD_CLEAR_TEXT と同じ
+const CB_LABEL = { prep: '準備（ダミー）', empty: '空の文字列', space: '空白1文字', text: '決まった文言' };
+const cbLines = [];
+
+function cbEnv() {
+  const standalone = navigator.standalone === true ||
+    !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  return `診断 v${DIAG_VERSION} ／ ${standalone ? 'ホーム画面のアプリ' : 'ブラウザ'} ／ ${navigator.userAgent}`;
+}
+
+function cbLog(line) {
+  cbLines.push(line);
+  $('#cb-log').textContent = [cbEnv(), ''].concat(cbLines).join('\n');
+}
+
+function cbWrite(kind) {
+  const p2 = (n) => String(n).padStart(2, '0');
+  const d = new Date();
+  const hms = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  const text = kind === 'prep' ? `DUMMY-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`
+             : kind === 'empty' ? '' : kind === 'space' ? ' ' : CB_TEXT;
+  let p;
+  try {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+      const e = new Error('navigator.clipboard.writeText がない'); e.name = 'NotSupported'; throw e;
+    }
+    p = navigator.clipboard.writeText(text);   // 待ちを挟まずに書き込む
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  p.then(
+    () => cbLog(`[${hms}] ${CB_LABEL[kind]}：成功と報告${kind === 'prep' ? `（${text}）` : ''}`),
+    (e) => cbLog(`[${hms}] ${CB_LABEL[kind]}：失敗（${(e && e.name) || 'Error'}${e && e.message ? ': ' + e.message : ''}）`)
+  );
+}
+
 /* ───────── 初期化 ───────── */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -379,6 +421,15 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#b-shot').addEventListener('click', takeShot);
   $('#b-copy').addEventListener('click', copyResults);
   $('#b-clear').addEventListener('click', () => { if (confirm('結果を消しますか？')) { results.length = 0; renderResults(); } });
+  // クリップボード試験(設計判断#34)
+  $('#cb-prep').addEventListener('click', () => cbWrite('prep'));
+  document.querySelectorAll('.cb-try').forEach(b => b.addEventListener('click', () => cbWrite(b.dataset.cb)));
+  $('#cb-copylog').addEventListener('click', () => {
+    const text = $('#cb-log').textContent;
+    navigator.clipboard.writeText(text).then(
+      () => alert('試験の記録をコピーしました。メール等に貼り付けて送ってください。'),
+      () => alert('コピーできませんでした。記録を長押しで選択してコピーしてください。'));
+  });
   // 画面を離れたらカメラを止める
   document.addEventListener('visibilitychange', () => { if (document.hidden) stopCamera(); });
 });

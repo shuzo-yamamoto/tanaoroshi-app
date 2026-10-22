@@ -109,6 +109,25 @@
   <div id="shots"></div>
 </section>
 
+<!-- クリップボード試験(README設計判断#34・不具合ログ#8)。ダミーの文字だけを使い、アプリのデータには触れない -->
+<section id="cb">
+  <h2>6. クリップボード試験（設定リンクの上書きの確認）</h2>
+  <p class="note"><b>ダミーの文字だけを使います（トークン・設定リンクは使いません）。</b>
+    ① 「準備」を押す → メモアプリに貼り付けて「DUMMY-…」が出ることを確かめる
+    ② この画面に戻り、上書きの方法を<b>1つだけ</b>押す → メモアプリに貼り付けて、何が出たかを見る
+    ③ 方法ごとに ① からやり直す（3通り）</p>
+  <div class="btns"><button id="cb-prep" class="ghost">① 準備（ダミーをコピー）</button></div>
+  <div class="btns">
+    <button class="cb-try" data-cb="empty">② 空の文字列で上書き</button>
+    <button class="cb-try" data-cb="space">② 空白1文字で上書き</button>
+    <button class="cb-try" data-cb="text">② 決まった文言で上書き</button>
+  </div>
+  <pre id="cb-log">（まだ試していません）</pre>
+  <p class="note">メモに貼ったとき「DUMMY-…」が出た＝<b>上書きされていない</b>。何も出ない・空白・「（棚卸アプリ：設定リンクは消去しました）」が出た＝<b>上書きされた</b>。
+    上の記録（成功と報告／失敗）と、メモに貼って出たものを、方法ごとに管理者へ送ってください。</p>
+  <div class="btns"><button id="cb-copylog" class="ghost">試験の記録をコピー（3通りを試し終えてから）</button></div>
+</section>
+
 </main>
 <script src="js/zxing.min.js"></script>
 <script src="js/diag.js"></script>

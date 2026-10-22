@@ -264,6 +264,11 @@
       <button id="btn-paste-cancel" class="big-btn btn-ghost">やめる</button>
     </div>
   </div>
+  <!-- 設定リンクを適用した後、クリップボードの上書きが拒否されたときだけ出す(README設計判断#34) -->
+  <div id="clip-clear-box" class="setup-box clip-clear-box" hidden>
+    <p class="hint"><b>クリップボードに設定リンクが残っているかもしれません。</b>下のボタンで消してください。消せないときは、「担当者名」の欄を長押し →「すべてを選択」→「コピー」で上書きします。</p>
+    <button id="btn-clip-clear" class="big-btn btn-secondary">📋 クリップボードを消す</button>
+  </div>
 
   <!-- 配布用の設定リンク（管理者が複数端末を設定するとき） -->
   <div id="setup-link-box" class="setup-box" hidden>
